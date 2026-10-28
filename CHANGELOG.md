@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 – Klaus räumt den Inspector auf
+
+- Statusspruch im Inspector aus dem überlagernden Bottom-up-Layout gelöst
+- „Klaus hat die Clock“ erscheint nun als normaler, mitscrollender Abschluss
+- anfängliche Piano-Roll-Höhe für kompakte Fenster auf 220 Pixel reduziert
+- mehr Platz für Matrix, achte Drumreihe und Arpeggiator-Inspector
+
 ## 0.5.0 – Klaus synchronisiert die Umlaufbahnen
 
 - Szenen speichern die aktive Patternauswahl aller Ketten gemeinsam

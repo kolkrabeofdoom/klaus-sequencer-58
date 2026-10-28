@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust 1.89
         uses: dtolnay/rust-toolchain@stable
@@ -42,7 +42,7 @@ jobs:
     needs: quality
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust 1.89
         uses: dtolnay/rust-toolchain@stable

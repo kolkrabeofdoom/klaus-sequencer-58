@@ -67,7 +67,6 @@ pub struct KlausApp {
     arp_random_state: u64,
     arp_running: bool,
     arp_status: String,
-    promo_capture: bool,
     queued_scene: Option<usize>,
     scene_status: String,
     transport_pulses: u64,
@@ -173,7 +172,6 @@ impl KlausApp {
             arp_random_state: 58,
             arp_running: false,
             arp_status: "ARP BEREIT".to_owned(),
-            promo_capture,
             queued_scene: None,
             scene_status: "SCENE 01 AKTIV".to_owned(),
             transport_pulses: 0,
@@ -1566,20 +1564,20 @@ impl KlausApp {
                             }
                         }
 
-                        ui.with_layout(Layout::bottom_up(Align::LEFT), |ui| {
-                            ui.label(
-                                RichText::new("Klaus hat die Clock.")
-                                    .italics()
-                                    .color(theme::MUTED),
-                            );
-                        });
+                        ui.add_space(12.0);
+                        ui.separator();
+                        ui.label(
+                            RichText::new("Klaus hat die Clock.")
+                                .italics()
+                                .color(theme::MUTED),
+                        );
                     });
             });
     }
 
     fn piano_roll(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("piano_roll")
-            .exact_height(if self.promo_capture { 220.0 } else { 286.0 })
+            .exact_height(220.0)
             .resizable(true)
             .frame(
                 egui::Frame::new()
@@ -1873,7 +1871,7 @@ impl KlausApp {
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new("v0.5.0 · PROTOTYPE").color(theme::MUTED));
+                        ui.label(RichText::new("v0.5.1 · PROTOTYPE").color(theme::MUTED));
                     });
                 });
             });
