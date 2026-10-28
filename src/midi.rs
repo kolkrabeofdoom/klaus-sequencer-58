@@ -132,9 +132,13 @@ impl MidiService {
     }
 
     pub fn schedule(&self, at: Instant, data: [u8; 3]) {
+        self.schedule_short(at, data, 3);
+    }
+
+    pub fn schedule_short(&self, at: Instant, data: [u8; 3], len: u8) {
         let _ = self
             .command_tx
-            .try_send(MidiCommand::Schedule { at, data, len: 3 });
+            .try_send(MidiCommand::Schedule { at, data, len });
     }
 
     pub fn schedule_realtime(&self, at: Instant, status: u8) {
@@ -230,6 +234,39 @@ pub fn note_on(channel: u8, pitch: u8, velocity: u8) -> [u8; 3] {
 
 pub fn note_off(channel: u8, pitch: u8) -> [u8; 3] {
     [0x80 | channel.saturating_sub(1).min(15), pitch.min(127), 0]
+}
+
+pub fn control_change(channel: u8, controller: u8, value: u8) -> [u8; 3] {
+    [
+        0xB0 | channel.saturating_sub(1).min(15),
+        controller.min(127),
+        value.min(127),
+    ]
+}
+
+pub fn program_change(channel: u8, program: u8) -> [u8; 3] {
+    [
+        0xC0 | channel.saturating_sub(1).min(15),
+        program.min(127),
+        0,
+    ]
+}
+
+pub fn sound_selection_messages(
+    channel: u8,
+    bank_msb: Option<u8>,
+    bank_lsb: Option<u8>,
+    program: u8,
+) -> Vec<([u8; 3], u8)> {
+    let mut messages = Vec::with_capacity(3);
+    if let Some(value) = bank_msb {
+        messages.push((control_change(channel, 0, value), 3));
+    }
+    if let Some(value) = bank_lsb {
+        messages.push((control_change(channel, 32, value), 3));
+    }
+    messages.push((program_change(channel, program), 2));
+    messages
 }
 
 pub fn panic_messages() -> Vec<[u8; 3]> {
@@ -481,7 +518,10 @@ fn panic_connection(connection: &mut Option<MidiOutputConnection>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{MidiInputMessage, NoteInput, decode_note, note_off, note_on, panic_messages};
+    use super::{
+        MidiInputMessage, NoteInput, control_change, decode_note, note_off, note_on,
+        panic_messages, program_change, sound_selection_messages,
+    };
 
     #[test]
     fn note_messages_use_one_based_channels_and_clamp_data() {
@@ -498,6 +538,22 @@ mod tests {
         assert_eq!(messages[1], [0xB0, 120, 0]);
         assert_eq!(messages[30], [0xBF, 123, 0]);
         assert_eq!(messages[31], [0xBF, 120, 0]);
+    }
+
+    #[test]
+    fn sound_selection_messages_use_the_requested_channel() {
+        assert_eq!(control_change(3, 0, 12), [0xB2, 0, 12]);
+        assert_eq!(control_change(3, 32, 7), [0xB2, 32, 7]);
+        assert_eq!(program_change(3, 41), [0xC2, 41, 0]);
+        assert_eq!(program_change(16, 200), [0xCF, 127, 0]);
+        assert_eq!(
+            sound_selection_messages(3, Some(12), Some(7), 41),
+            vec![([0xB2, 0, 12], 3), ([0xB2, 32, 7], 3), ([0xC2, 41, 0], 2)]
+        );
+        assert_eq!(
+            sound_selection_messages(3, None, None, 41),
+            vec![([0xC2, 41, 0], 2)]
+        );
     }
 
     #[test]

@@ -115,6 +115,19 @@ mod tests {
         object.remove("midi_clock_mode");
         object.remove("performance_timeline");
         object.remove("generation_plan");
+        for route in object
+            .get_mut("chains")
+            .and_then(serde_json::Value::as_array_mut)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(route) = route
+                .get_mut("route")
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                route.remove("sound");
+            }
+        }
         fs::write(
             &path,
             serde_json::to_vec_pretty(&value).expect("serialize legacy project"),
@@ -135,6 +148,12 @@ mod tests {
         assert_eq!(
             restored.generation_plan.lane_configs.len(),
             restored.lanes.len()
+        );
+        assert!(
+            restored
+                .chains
+                .iter()
+                .all(|chain| !chain.route.sound.enabled)
         );
         let _ = fs::remove_file(path);
     }

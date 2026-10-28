@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.1 – Klaus verteilt Klangadressen
+
+- Sound-Ziel pro Kette mit Bank Select MSB (`CC 0`), Bank Select LSB (`CC 32`) und Program Change
+- MSB und LSB einzeln aktivierbar für unterschiedliche Herstellerkonventionen
+- lesbare Programmnummern 1–128 mit korrekter MIDI-Übersetzung auf 0–127
+- manueller Taster **SOUND JETZT SENDEN** im Ketten-Inspector
+- optionales automatisches Senden aller aktivierten Sound-Ziele nach dem Verbinden des MIDI-Ausgangs
+- Sound-Ziele werden in Projektdateien gespeichert; ältere Projekte erhalten sichere, deaktivierte Standardwerte
+- Projektformat 5 mit automatischer Migration
+
 ## 0.6.0 – Klaus würfelt kontrolliert
 
 - kreativer, Berlin-School-inspirierter Generator für die jeweils gewählte Reihe

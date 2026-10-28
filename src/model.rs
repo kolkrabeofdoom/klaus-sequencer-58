@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const LANE_COUNT: usize = 8;
 pub const STEPS_PER_LANE: usize = 16;
-pub const PROJECT_FORMAT_VERSION: u32 = 4;
+pub const PROJECT_FORMAT_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LaneKind {
@@ -350,9 +350,32 @@ impl Lane {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MidiSoundTarget {
+    pub enabled: bool,
+    pub bank_msb: Option<u8>,
+    pub bank_lsb: Option<u8>,
+    pub program: u8,
+    pub send_on_connect: bool,
+}
+
+impl Default for MidiSoundTarget {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bank_msb: Some(0),
+            bank_lsb: Some(0),
+            program: 0,
+            send_on_connect: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MidiRoute {
     pub output_name: Option<String>,
     pub channel: u8,
+    #[serde(default)]
+    pub sound: MidiSoundTarget,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -500,6 +523,7 @@ impl Project {
                 route: MidiRoute {
                     output_name: None,
                     channel: 3,
+                    sound: MidiSoundTarget::default(),
                 },
                 division: StepDivision::Sixteenth,
                 swing: 0.54,
@@ -513,6 +537,7 @@ impl Project {
                 route: MidiRoute {
                     output_name: None,
                     channel: 6,
+                    sound: MidiSoundTarget::default(),
                 },
                 division: StepDivision::Sixteenth,
                 swing: 0.5,
@@ -526,6 +551,7 @@ impl Project {
                 route: MidiRoute {
                     output_name: None,
                     channel: 4,
+                    sound: MidiSoundTarget::default(),
                 },
                 division: StepDivision::Sixteenth,
                 swing: 0.5,
@@ -539,6 +565,7 @@ impl Project {
                 route: MidiRoute {
                     output_name: None,
                     channel: 5,
+                    sound: MidiSoundTarget::default(),
                 },
                 division: StepDivision::Sixteenth,
                 swing: 0.5,
@@ -555,6 +582,7 @@ impl Project {
                 route: MidiRoute {
                     output_name: None,
                     channel: 7,
+                    sound: MidiSoundTarget::default(),
                 },
                 division: StepDivision::Sixteenth,
                 swing: 0.5,
@@ -568,6 +596,7 @@ impl Project {
                 route: MidiRoute {
                     output_name: None,
                     channel: 10,
+                    sound: MidiSoundTarget::default(),
                 },
                 division: StepDivision::Sixteenth,
                 swing: 0.54,
@@ -659,6 +688,7 @@ impl Project {
                     } else {
                         (lane.id as u8 + 1).clamp(1, 16)
                     },
+                    sound: MidiSoundTarget::default(),
                 },
                 division: StepDivision::Sixteenth,
                 swing: self.global_swing.clamp(0.5, 0.75),

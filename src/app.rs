@@ -10,7 +10,7 @@ use crate::engine::{
 use crate::generator::{GenerationMode, generate_lane};
 use crate::midi::{
     MidiEvent, MidiInputEvent, MidiInputMessage, MidiInputService, MidiService, MidiStatus,
-    NoteInput, decode_note, note_off, note_on,
+    NoteInput, decode_note, note_off, note_on, sound_selection_messages,
 };
 use crate::model::{
     ArpMode, Direction, GeneratorRole, LaneGeneratorConfig, LaneKind, MidiClockMode, MusicalScale,
@@ -100,6 +100,7 @@ pub struct KlausApp {
     generator_open: bool,
     generator_preview: Option<GeneratorPreview>,
     generator_status: String,
+    sound_status: String,
 }
 
 impl KlausApp {
@@ -149,6 +150,12 @@ impl KlausApp {
                     lane.steps[*step_index].notes =
                         pitches.iter().copied().map(NoteEvent::new).collect();
                 }
+            }
+            if let Some(chain) = project.chains.get_mut(3) {
+                chain.route.sound.enabled = true;
+                chain.route.sound.bank_msb = Some(87);
+                chain.route.sound.bank_lsb = Some(0);
+                chain.route.sound.program = 17;
             }
         }
 
@@ -225,6 +232,7 @@ impl KlausApp {
             } else {
                 "KLAUS WARTET AUF EIN MOTIV".to_owned()
             },
+            sound_status: "SOUND-ZIEL BEREIT".to_owned(),
         }
     }
 
@@ -1247,7 +1255,14 @@ impl KlausApp {
                         self.selected_output = self.midi_ports.first().cloned();
                     }
                 }
-                MidiEvent::Status(status) => self.midi_status = status,
+                MidiEvent::Status(status) => {
+                    let became_connected = !matches!(self.midi_status, MidiStatus::Connected(_))
+                        && matches!(status, MidiStatus::Connected(_));
+                    self.midi_status = status;
+                    if became_connected {
+                        self.send_automatic_sounds();
+                    }
+                }
             }
         }
         while let Some(event) = self.midi_input.poll_event() {
@@ -1586,6 +1601,54 @@ impl KlausApp {
         }
     }
 
+    fn send_chain_sound(&mut self, chain_index: usize) {
+        if !matches!(self.midi_status, MidiStatus::Connected(_)) {
+            self.sound_status = "SOUND NICHT GESENDET · MIDI OUT GETRENNT".to_owned();
+            return;
+        }
+        let Some(chain) = self.project.chains.get(chain_index) else {
+            return;
+        };
+        let sound = chain.route.sound.clone();
+        if !sound.enabled {
+            self.sound_status = format!("{} · SOUND-ZIEL IST AUS", chain.name);
+            return;
+        }
+        let now = Instant::now();
+        let channel = chain.route.channel.clamp(1, 16);
+        for (message, len) in
+            sound_selection_messages(channel, sound.bank_msb, sound.bank_lsb, sound.program)
+        {
+            self.midi.schedule_short(now, message, len);
+        }
+        self.sound_status = format!(
+            "{} · BANK {}:{} · PROGRAMM {} GESENDET ✓",
+            chain.name,
+            sound
+                .bank_msb
+                .map_or_else(|| "–".to_owned(), |value| value.to_string()),
+            sound
+                .bank_lsb
+                .map_or_else(|| "–".to_owned(), |value| value.to_string()),
+            u16::from(sound.program) + 1
+        );
+    }
+
+    fn send_automatic_sounds(&mut self) {
+        let chain_indices: Vec<usize> = self
+            .project
+            .chains
+            .iter()
+            .enumerate()
+            .filter_map(|(index, chain)| {
+                (chain.route.sound.enabled && chain.route.sound.send_on_connect).then_some(index)
+            })
+            .collect();
+        for chain_index in chain_indices {
+            self.send_chain_sound(chain_index);
+        }
+    }
+
     fn schedule_midi(&self, triggers: &[StepTrigger]) {
         let any_solo = self.project.lanes.iter().any(|lane| lane.solo);
         let base_time = Instant::now();
@@ -1718,6 +1781,9 @@ impl KlausApp {
                         let mut clear_arp_latch = false;
                         let mut render_arp = false;
                         let mut switch_pattern = None;
+                        let mut send_sound = None;
+                        let midi_connected = matches!(self.midi_status, MidiStatus::Connected(_));
+                        let sound_status = self.sound_status.clone();
                         if let Some(chain_index) = self
                             .project
                             .chains
@@ -1786,6 +1852,84 @@ impl KlausApp {
                                         .speed(0.2),
                                 );
                             });
+                            ui.add_space(4.0);
+                            ui.label(
+                                RichText::new("SOUND-ZIEL")
+                                    .color(theme::ORANGE)
+                                    .size(10.0),
+                            );
+                            ui.checkbox(&mut chain.route.sound.enabled, "BANK + PROGRAM SENDEN");
+                            if chain.route.sound.enabled {
+                                ui.horizontal(|ui| {
+                                    let mut enabled = chain.route.sound.bank_msb.is_some();
+                                    if ui.checkbox(&mut enabled, "BANK MSB").changed() {
+                                        chain.route.sound.bank_msb = enabled.then_some(0);
+                                    }
+                                    if let Some(value) = &mut chain.route.sound.bank_msb {
+                                        ui.add(
+                                            egui::DragValue::new(value)
+                                                .range(0..=127)
+                                                .speed(0.2),
+                                        );
+                                    }
+                                });
+                                ui.horizontal(|ui| {
+                                    let mut enabled = chain.route.sound.bank_lsb.is_some();
+                                    if ui.checkbox(&mut enabled, "BANK LSB").changed() {
+                                        chain.route.sound.bank_lsb = enabled.then_some(0);
+                                    }
+                                    if let Some(value) = &mut chain.route.sound.bank_lsb {
+                                        ui.add(
+                                            egui::DragValue::new(value)
+                                                .range(0..=127)
+                                                .speed(0.2),
+                                        );
+                                    }
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        RichText::new("PROGRAMM 1–128")
+                                            .color(theme::MUTED)
+                                            .size(9.0),
+                                    );
+                                    let mut displayed_program =
+                                        u16::from(chain.route.sound.program) + 1;
+                                    if ui
+                                        .add(
+                                            egui::DragValue::new(&mut displayed_program)
+                                                .range(1..=128)
+                                                .speed(0.2),
+                                        )
+                                        .changed()
+                                    {
+                                        chain.route.sound.program =
+                                            displayed_program.saturating_sub(1) as u8;
+                                    }
+                                });
+                                ui.checkbox(
+                                    &mut chain.route.sound.send_on_connect,
+                                    "BEIM VERBINDEN SENDEN",
+                                );
+                                if ui
+                                    .add_enabled(
+                                        midi_connected,
+                                        egui::Button::new("SOUND JETZT SENDEN")
+                                            .fill(Color32::from_rgb(58, 39, 22)),
+                                    )
+                                    .on_hover_text(
+                                        "Bank Select MSB, Bank Select LSB und danach Program Change senden",
+                                    )
+                                    .clicked()
+                                {
+                                    send_sound = Some(chain_index);
+                                }
+                                ui.label(
+                                    RichText::new(&sound_status)
+                                        .color(theme::MUTED)
+                                        .size(8.5),
+                                );
+                            }
+                            ui.separator();
                             ui.label(RichText::new("RICHTUNG").color(theme::MUTED).size(9.0));
                             egui::ComboBox::from_id_salt("chain_direction")
                                 .selected_text(direction_label(chain.direction))
@@ -1912,6 +2056,9 @@ impl KlausApp {
 
                         if clear_arp_latch {
                             self.clear_arp_latch();
+                        }
+                        if let Some(chain_index) = send_sound {
+                            self.send_chain_sound(chain_index);
                         }
                         if render_arp && let Some(chain_index) = self.selected_chain_index() {
                             self.render_arpeggiator_pattern(chain_index);
@@ -2273,7 +2420,7 @@ impl KlausApp {
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new("v0.6.0 · PROTOTYPE").color(theme::MUTED));
+                        ui.label(RichText::new("v0.6.1 · PROTOTYPE").color(theme::MUTED));
                     });
                 });
             });

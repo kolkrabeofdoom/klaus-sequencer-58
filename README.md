@@ -8,7 +8,7 @@ Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in 
 > „Warum nur einen? Alle brauchen zwei 303s.“  
 > — Klaus, vermutlich während einer völlig sachlichen Budgetbesprechung
 
-[![Version](https://img.shields.io/badge/version-0.6.0-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
+[![Version](https://img.shields.io/badge/version-0.6.1-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.89%2B-cyan)](https://www.rust-lang.org/)
 [![Plattform](https://img.shields.io/badge/platform-Windows-57d2d2)](#systemanforderungen)
 [![Lizenz](https://img.shields.io/badge/license-AGPL--3.0--or--later-9d69e3)](#lizenz)
@@ -74,6 +74,7 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 - echte 16/32-Step-Wiedergabe verketteter Reihen
 - gleichzeitig laufende Ketten unterschiedlicher Länge
 - eigene MIDI-Kanäle, Teilungen und Swing-Werte pro Kette
+- Sound-Ziel pro Kette mit Bank Select MSB/LSB und Program Change
 - Vorwärts, Rückwärts, Ping-Pong und deterministischer Zufall
 - MIDI-Ausgang mit zeitgenauen Note-Offs, Gates und Ratchets
 - MIDI-Eingang, MIDI-Thru und Geräteaktualisierung
@@ -106,7 +107,7 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 
 Die aktuelle Windows-Version befindet sich unter [Releases](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases).
 
-1. `KLAUS-Sequencer-58-v0.6.0.exe` herunterladen.
+1. `KLAUS-Sequencer-58-v0.6.1.exe` herunterladen.
 2. Anwendung starten.
 3. MIDI-Ausgang und optional MIDI-Eingang auswählen.
 4. Gerät verbinden.
@@ -191,6 +192,16 @@ Der **PANIC**-Knopf sendet auf allen 16 Kanälen:
 - All Sound Off (`CC 120`)
 
 Klaus gerät also nicht in Panik. Er verwaltet sie lediglich professionell.
+
+### Bank- und Programmwahl
+
+Jede Kette kann dem verbundenen Instrument neben dem MIDI-Kanal auch ein Sound-Ziel mitteilen:
+
+- **Bank MSB:** optionaler `Control Change 0`, Werte 0–127
+- **Bank LSB:** optionaler `Control Change 32`, Werte 0–127
+- **Programm:** in der Oberfläche 1–128, auf dem MIDI-Kabel normgerecht 0–127
+
+**SOUND JETZT SENDEN** überträgt die Auswahl unmittelbar. Mit **BEIM VERBINDEN SENDEN** stellt K.L.A.U.S. alle aktivierten Ketten automatisch ein, sobald der MIDI-Ausgang bereit ist. MSB und LSB lassen sich getrennt deaktivieren, denn manche Instrumente verwenden nur einen Teil des Bank-Select-Verfahrens oder interpretieren Banken nach eigenen Tabellen. Die konkrete Zuordnung steht deshalb weiterhin im MIDI-Handbuch des angeschlossenen Geräts – jenem literarischen Genre, in dem Seite 73 oft wichtiger ist als die gesamte Einleitung.
 
 ### MIDI-Clock
 
@@ -347,6 +358,7 @@ Die verbindlichen visuellen Referenzen sind [`assets/klaussequencer58-character-
 |---|---:|---|---|
 | Standalone Windows | ✅ | Installer/Signierung | weitere Desktop-Plattformen |
 | MIDI In/Out | ✅ | stabilere Geräteprofile | erweiterte Routing-Matrix |
+| Bank/Program Change | ✅ | benannte Geräteprofile | gerätespezifische Patch-Bibliotheken |
 | MIDI-Clock | ✅ | Clock-Offset und Diagnose | Ableton Link prüfen |
 | Polyphone Steps | ✅ | komfortablere Auswahl | MPE-Prüfung |
 | Probability/Ratchets | ✅ | Modulation | bedingte Trigger |
