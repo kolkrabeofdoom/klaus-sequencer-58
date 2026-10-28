@@ -1,0 +1,11 @@
+/target/
+/outputs/
+/work/
+/*.zip
+*.klaus58.json
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
