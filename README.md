@@ -1,6 +1,6 @@
 # K.L.A.U.S. Sequencer 58
 
-![K.L.A.U.S. Sequencer 58](KLAUS-Promobild-v0.4.png)
+![K.L.A.U.S. Sequencer 58](KLAUS-Promobild-v0.5.png)
 
 **Ketten-Looper für Arpeggien und unabhängige Steps**  
 Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in Rust, inspiriert von Berlin School, Modularsystemen, polyrhythmischen Verschiebungen und der begründeten Überzeugung, dass ein Step mehr als eine Note tragen darf.
@@ -8,7 +8,7 @@ Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in 
 > „Warum nur einen? Alle brauchen zwei 303s.“  
 > — Klaus, vermutlich während einer völlig sachlichen Budgetbesprechung
 
-[![Version](https://img.shields.io/badge/version-0.4.0-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
+[![Version](https://img.shields.io/badge/version-0.5.0-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.89%2B-cyan)](https://www.rust-lang.org/)
 [![Plattform](https://img.shields.io/badge/platform-Windows-57d2d2)](#systemanforderungen)
 [![Lizenz](https://img.shields.io/badge/license-AGPL--3.0--or--later-9d69e3)](#lizenz)
@@ -53,7 +53,7 @@ Das Resultat soll sowohl ein **Live-Instrument** als auch ein **Kompositionssequ
 
 ## Projektstatus
 
-K.L.A.U.S. ist ein funktionierender **v0.4-Prototyp**. MIDI-Ein- und -Ausgabe, Transport, Ketten, Pattern, polyphone Steps, Probability, Ratchets, Live-Skips und Arpeggiator sind real implementiert. Das ist keine statische Designstudie.
+K.L.A.U.S. ist ein funktionierender **v0.5-Prototyp**. MIDI-Ein- und -Ausgabe, Transport, Ketten, Pattern, Szenen, polyphone Steps, Probability, Ratchets, Live-Skips, Arpeggiator und MIDI-Clock sind real implementiert. Das ist keine statische Designstudie.
 
 Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetriebssystem für eine Marsmission. Vor einem Konzert sollte mensch das Setup mit dem eigenen MIDI-Interface und den verwendeten Instrumenten testen.
 
@@ -79,6 +79,12 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 - Live-Instrument, Akkord-Capture, Step-Record und quantisierte Aufnahme
 - Live-Arpeggiator inklusive Latch und Arp-Ratchets
 - mehrere Kettenpatterns mit sicherem Patternwechsel
+- Szenen für gemeinsame Patternwechsel über alle Ketten
+- quantisierte Szenenstarts: sofort, nächster Step, Beat oder Takt
+- MIDI-Clock als Internal, Master oder Follower
+- MIDI Start, Continue und Stop
+- native Projektdateien mit Öffnen, Speichern und Speichern unter
+- Undo/Redo mit bis zu 64 vollständigen Projektzuständen
 - Rendern eines Arpeggios in ein neues Pattern
 - atomisches Autosave mit Wiederherstellung
 - MIDI-Panic auf allen 16 Kanälen
@@ -86,11 +92,9 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 
 ### Bewusst noch nicht fertig
 
-- Szenen für gemeinsame Patternwechsel
 - vollständiger Kompositions-/Songmodus
 - Performance Capture
 - MIDI-Dateiexport
-- externe MIDI-Clock als Master und Follower
 - Vollbild-Piano-Roll
 - VST3-, CLAP- und LV2-Adapter
 - bedingte Trigger; im Datenmodell vorgesehen, noch nicht in der Oberfläche
@@ -99,7 +103,7 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 
 Die aktuelle Windows-Version befindet sich unter [Releases](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases).
 
-1. `KLAUS-Sequencer-58-v0.4.0.exe` herunterladen.
+1. `KLAUS-Sequencer-58-v0.5.0.exe` herunterladen.
 2. Anwendung starten.
 3. MIDI-Ausgang und optional MIDI-Eingang auswählen.
 4. Gerät verbinden.
@@ -185,6 +189,16 @@ Der **PANIC**-Knopf sendet auf allen 16 Kanälen:
 
 Klaus gerät also nicht in Panik. Er verwaltet sie lediglich professionell.
 
+### MIDI-Clock
+
+v0.5 bietet drei globale Clock-Modi:
+
+- **Internal:** K.L.A.U.S. verwendet sein eigenes Tempo.
+- **Master:** K.L.A.U.S. sendet 24 PPQN sowie MIDI Start, Continue und Stop.
+- **Follower:** Eingehende Clock-Pulse treiben Transport, Szenenquantisierung und BPM-Anzeige.
+
+Im Follower-Modus wird das Tempo aus den eingehenden Pulsen geglättet. Fehlt die Clock länger als eine Sekunde, zeigt die Oberfläche ausdrücklich, dass Klaus wartet, statt stillschweigend so zu tun, als sei alles in Ordnung.
+
 ## Arpeggiator
 
 Der Live-Arpeggiator unterstützt:
@@ -222,9 +236,13 @@ Jede Kette besitzt eigene Werte für:
 
 Mehrere Ketten dürfen unterschiedliche effektive Längen besitzen und gleichzeitig laufen. Genau daraus entstehen die langsam wandernden Überlagerungen, die für kosmische Sequenzmusik und Berlin School so charakteristisch sind.
 
-### Pattern heute, Szenen morgen
+### Pattern und Szenen
 
-v0.4 unterstützt mehrere Einzelpatterns pro Kette. Geplante Szenen werden später mehrere Patternwechsel gemeinsam auslösen. Das Datenmodell trennt bereits musikalischen Zustand, Engine und Oberfläche, damit diese Erweiterung nicht mit Klebeband an die Transportleiste geheftet werden muss.
+Mehrere Einzelpatterns gehören jeweils zu einer Kette. Eine Szene speichert die aktive Patternauswahl aller Ketten gemeinsam. Szenen lassen sich anlegen, umbenennen, aktualisieren und während der Wiedergabe vormerken.
+
+Der Wechsel erfolgt wahlweise sofort oder quantisiert am nächsten Step, Beat oder Takt. Grundlage ist eine gemeinsame 24-PPQN-Transportzeit, sodass auch unabhängig lange Ketten gemeinsam in eine neue Szene wechseln können, ohne ihre musikalische Eigenständigkeit aufzugeben.
+
+Die Performance-Timeline ist in Projektformat 3 bereits vorbereitet. Die tatsächliche Aufnahme von Szenenwechseln, Live-Skips und Transportaktionen folgt in einer späteren Version.
 
 ## Piano-Rolls
 
@@ -289,16 +307,18 @@ Die verbindlichen visuellen Referenzen sind [`assets/klaussequencer58-character-
 
 ## Roadmap
 
-| Bereich | v0.4 | Nächste Schritte | Später |
+| Bereich | v0.5 | Nächste Schritte | Später |
 |---|---:|---|---|
 | Standalone Windows | ✅ | Installer/Signierung | weitere Desktop-Plattformen |
-| MIDI In/Out | ✅ | Clock Master/Follower | erweiterte Routing-Matrix |
+| MIDI In/Out | ✅ | stabilere Geräteprofile | erweiterte Routing-Matrix |
+| MIDI-Clock | ✅ | Clock-Offset und Diagnose | Ableton Link prüfen |
 | Polyphone Steps | ✅ | komfortablere Auswahl | MPE-Prüfung |
 | Probability/Ratchets | ✅ | Modulation | bedingte Trigger |
 | Live-Arpeggiator | ✅ | Presets | komplexere Arp-Transformationen |
-| Kettenpatterns | ✅ | Szenen | Song-/Kompositionsmodus |
+| Kettenpatterns | ✅ | Szenenverwaltung ausbauen | Song-/Kompositionsmodus |
+| Szenen | ✅ | Duplizieren/Löschen | Szenen-Timeline |
 | Live-Skips | ✅ | Performance Capture | Automation |
-| Autosave | ✅ | benannte Projekte | Projektbrowser |
+| Projektdateien/Undo | ✅ | Projektbrowser | Versionierung |
 | MIDI-Export | – | geplant | – |
 | Plug-ins | vorbereitet | VST3 | CLAP und LV2 |
 | Touch | grundlegend | Gesten und Skalierung | optimierte Tablet-Layouts |

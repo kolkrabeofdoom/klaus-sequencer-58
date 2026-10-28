@@ -55,7 +55,7 @@ enum MidiCommand {
     RefreshPorts,
     Connect(String),
     Disconnect,
-    Schedule { at: Instant, data: [u8; 3] },
+    Schedule { at: Instant, data: [u8; 3], len: u8 },
     Panic,
     Shutdown,
 }
@@ -72,6 +72,7 @@ struct ScheduledMessage {
     at: Instant,
     order: u64,
     data: [u8; 3],
+    len: u8,
 }
 
 impl Ord for ScheduledMessage {
@@ -131,7 +132,17 @@ impl MidiService {
     }
 
     pub fn schedule(&self, at: Instant, data: [u8; 3]) {
-        let _ = self.command_tx.try_send(MidiCommand::Schedule { at, data });
+        let _ = self
+            .command_tx
+            .try_send(MidiCommand::Schedule { at, data, len: 3 });
+    }
+
+    pub fn schedule_realtime(&self, at: Instant, status: u8) {
+        let _ = self.command_tx.try_send(MidiCommand::Schedule {
+            at,
+            data: [status, 0, 0],
+            len: 1,
+        });
     }
 
     pub fn panic(&self) {
@@ -294,9 +305,14 @@ fn worker_loop(command_rx: Receiver<MidiCommand>, event_tx: mpsc::Sender<MidiEve
                 connection = None;
                 let _ = event_tx.send(MidiEvent::Status(MidiStatus::Disconnected));
             }
-            Ok(MidiCommand::Schedule { at, data }) => {
+            Ok(MidiCommand::Schedule { at, data, len }) => {
                 if connection.is_some() {
-                    pending.push(ScheduledMessage { at, order, data });
+                    pending.push(ScheduledMessage {
+                        at,
+                        order,
+                        data,
+                        len: len.clamp(1, 3),
+                    });
                     order = order.wrapping_add(1);
                 }
             }
@@ -446,7 +462,7 @@ fn send_due(
             break;
         };
         if let Some(open_connection) = connection.as_mut()
-            && let Err(error) = open_connection.send(&message.data)
+            && let Err(error) = open_connection.send(&message.data[..usize::from(message.len)])
         {
             let _ = event_tx.send(MidiEvent::Status(MidiStatus::Error(format!(
                 "MIDI-Senden fehlgeschlagen: {error}"

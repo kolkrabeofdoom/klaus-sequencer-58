@@ -21,6 +21,7 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
         Project::from_json(&json).map_err(|error| format!("Projektdatei ist ungültig: {error}"))?;
     project.ensure_lane_coverage();
     project.ensure_patterns();
+    project.ensure_scenes();
     project.format_version = PROJECT_FORMAT_VERSION;
     project.validate_chains()?;
     Ok(project)
@@ -94,6 +95,41 @@ mod tests {
         save_project_atomic(&project, &path).expect("save project");
         let restored = load_project(&path).expect("load project");
         assert_eq!(restored, project);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn version_two_projects_receive_scenes_and_clock_defaults() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("klaus58-v2-test-{unique}.json"));
+        let mut value = serde_json::to_value(Project::demo()).expect("serialize project");
+        let object = value.as_object_mut().expect("project object");
+        object.insert("format_version".to_owned(), 2.into());
+        object.remove("scenes");
+        object.remove("active_scene");
+        object.remove("scene_launch_quantization");
+        object.remove("midi_clock_mode");
+        object.remove("performance_timeline");
+        fs::write(
+            &path,
+            serde_json::to_vec_pretty(&value).expect("serialize legacy project"),
+        )
+        .expect("write legacy project");
+
+        let restored = load_project(&path).expect("load legacy project");
+        assert_eq!(
+            restored.format_version,
+            crate::model::PROJECT_FORMAT_VERSION
+        );
+        assert_eq!(restored.scenes.len(), 1);
+        assert_eq!(restored.active_scene, Some(0));
+        assert_eq!(
+            restored.midi_clock_mode,
+            crate::model::MidiClockMode::Internal
+        );
         let _ = fs::remove_file(path);
     }
 }

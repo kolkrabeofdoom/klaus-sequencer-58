@@ -56,3 +56,26 @@ fn chain_patterns_can_be_added_activated_and_switched() {
         .expect("switch pattern");
     assert_ne!(project.lanes[0].steps[0].notes[0].pitch, 72);
 }
+
+#[test]
+fn scenes_capture_and_restore_all_chain_patterns() {
+    let mut project = Project::demo();
+    let original = project.active_pattern_by_chain.clone();
+    let alternate_steps = project.chains[0]
+        .lane_ids
+        .iter()
+        .map(|lane_id| project.lanes[*lane_id].steps.clone())
+        .collect();
+    let alternate = project
+        .add_chain_pattern(0, "ALTERNATE".to_owned(), alternate_steps)
+        .expect("add pattern");
+    let scene = project.add_scene("ALTERNATE SCENE".to_owned());
+    assert_eq!(project.scenes[scene].pattern_by_chain[0], alternate);
+
+    project
+        .apply_chain_pattern(0, original[0])
+        .expect("restore original pattern");
+    project.apply_scene(scene).expect("apply scene");
+    assert_eq!(project.active_pattern_by_chain[0], alternate);
+    assert_eq!(project.active_scene, Some(scene));
+}

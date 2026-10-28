@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 – Klaus synchronisiert die Umlaufbahnen
+
+- Szenen speichern die aktive Patternauswahl aller Ketten gemeinsam
+- Szenen anlegen, umbenennen, aktualisieren und live vormerken
+- quantisierte Szenenwechsel: sofort, nächster Step, Beat oder Takt
+- gemeinsame 24-PPQN-Transportzeit für unabhängige Ketten
+- MIDI-Clock als Internal, Master und Follower
+- MIDI Start, Continue und Stop als echte einbyteige Realtime-Nachrichten
+- geglättete Tempoerkennung und Clock-Timeout-Anzeige im Follower-Modus
+- Öffnen, Speichern und Speichern unter mit nativen Dateidialogen
+- Undo/Redo mit bis zu 64 vollständigen Projekt-Snapshots
+- Performance-Timeline im Datenmodell vorbereitet
+- Projektformat 3 mit automatischer Migration älterer Projekte
+- GitHub Actions für Formatierung, Tests, Clippy und Windows-Release-Builds
+
 ## 0.4.0 – Klaus arpeggiert
 
 - Live-Arpeggiator mit Aufwärts, Abwärts, Auf/Ab, Zufall und Spielreihenfolge

@@ -43,11 +43,23 @@ impl Default for PreviewEngine {
 }
 
 impl PreviewEngine {
-    pub fn toggle(&mut self) {
+    pub fn start(&mut self) {
         if !self.playing {
             self.emit_current_step = true;
         }
-        self.playing = !self.playing;
+        self.playing = true;
+    }
+
+    pub fn pause(&mut self) {
+        self.playing = false;
+    }
+
+    pub fn toggle(&mut self) {
+        if self.playing {
+            self.pause();
+        } else {
+            self.start();
+        }
     }
 
     pub fn stop(&mut self) {

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const LANE_COUNT: usize = 8;
 pub const STEPS_PER_LANE: usize = 16;
-pub const PROJECT_FORMAT_VERSION: u32 = 2;
+pub const PROJECT_FORMAT_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LaneKind {
@@ -33,6 +33,34 @@ pub enum StepDivision {
     Sixteenth,
     SixteenthTriplet,
     ThirtySecond,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum SceneLaunchQuantization {
+    Immediate,
+    NextStep,
+    NextBeat,
+    #[default]
+    NextBar,
+}
+
+impl SceneLaunchQuantization {
+    pub fn pulses(self) -> Option<u64> {
+        match self {
+            Self::Immediate => None,
+            Self::NextStep => Some(6),
+            Self::NextBeat => Some(24),
+            Self::NextBar => Some(96),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum MidiClockMode {
+    #[default]
+    Internal,
+    Master,
+    Follower,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -200,6 +228,37 @@ pub struct ChainPattern {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Scene {
+    pub id: usize,
+    pub name: String,
+    pub pattern_by_chain: Vec<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PerformanceAction {
+    SceneLaunch {
+        scene_id: usize,
+    },
+    PatternChange {
+        chain_id: usize,
+        pattern_id: usize,
+    },
+    LiveSkip {
+        lane: usize,
+        step: usize,
+        enabled: bool,
+    },
+    TransportStart,
+    TransportStop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PerformanceEvent {
+    pub pulse: u64,
+    pub action: PerformanceAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     pub format_version: u32,
     pub title: String,
@@ -211,6 +270,16 @@ pub struct Project {
     pub patterns: Vec<ChainPattern>,
     #[serde(default)]
     pub active_pattern_by_chain: Vec<usize>,
+    #[serde(default)]
+    pub scenes: Vec<Scene>,
+    #[serde(default)]
+    pub active_scene: Option<usize>,
+    #[serde(default)]
+    pub scene_launch_quantization: SceneLaunchQuantization,
+    #[serde(default)]
+    pub midi_clock_mode: MidiClockMode,
+    #[serde(default)]
+    pub performance_timeline: Vec<PerformanceEvent>,
 }
 
 impl Project {
@@ -365,8 +434,14 @@ impl Project {
             chains,
             patterns: Vec::new(),
             active_pattern_by_chain: Vec::new(),
+            scenes: Vec::new(),
+            active_scene: None,
+            scene_launch_quantization: SceneLaunchQuantization::default(),
+            midi_clock_mode: MidiClockMode::default(),
+            performance_timeline: Vec::new(),
         };
         project.ensure_patterns();
+        project.ensure_scenes();
         project
     }
 
@@ -479,6 +554,85 @@ impl Project {
             }
         }
         self.active_pattern_by_chain.truncate(self.chains.len());
+    }
+
+    pub fn ensure_scenes(&mut self) {
+        self.ensure_patterns();
+        if self.scenes.is_empty() {
+            self.scenes.push(Scene {
+                id: 0,
+                name: "SCENE 01".to_owned(),
+                pattern_by_chain: self.active_pattern_by_chain.clone(),
+            });
+            self.active_scene = Some(0);
+            return;
+        }
+
+        for scene in &mut self.scenes {
+            scene.pattern_by_chain.resize(self.chains.len(), 0);
+            for (chain_index, pattern_index) in scene.pattern_by_chain.iter_mut().enumerate() {
+                let valid = self
+                    .patterns
+                    .get(*pattern_index)
+                    .zip(self.chains.get(chain_index))
+                    .is_some_and(|(pattern, chain)| pattern.chain_id == chain.id);
+                if !valid {
+                    *pattern_index = self.active_pattern_by_chain[chain_index];
+                }
+            }
+        }
+        if self
+            .active_scene
+            .is_some_and(|index| index >= self.scenes.len())
+        {
+            self.active_scene = None;
+        }
+    }
+
+    pub fn add_scene(&mut self, name: String) -> usize {
+        self.sync_all_active_patterns();
+        let id = self
+            .scenes
+            .iter()
+            .map(|scene| scene.id)
+            .max()
+            .map_or(0, |id| id + 1);
+        self.scenes.push(Scene {
+            id,
+            name,
+            pattern_by_chain: self.active_pattern_by_chain.clone(),
+        });
+        let index = self.scenes.len() - 1;
+        self.active_scene = Some(index);
+        index
+    }
+
+    pub fn capture_scene(&mut self, scene_index: usize) -> Result<(), String> {
+        self.sync_all_active_patterns();
+        let scene = self
+            .scenes
+            .get_mut(scene_index)
+            .ok_or_else(|| "Unbekannte Szene".to_owned())?;
+        scene.pattern_by_chain = self.active_pattern_by_chain.clone();
+        self.active_scene = Some(scene_index);
+        Ok(())
+    }
+
+    pub fn apply_scene(&mut self, scene_index: usize) -> Result<(), String> {
+        self.sync_all_active_patterns();
+        let scene = self
+            .scenes
+            .get(scene_index)
+            .ok_or_else(|| "Unbekannte Szene".to_owned())?
+            .clone();
+        if scene.pattern_by_chain.len() != self.chains.len() {
+            return Err("Szene hat nicht die erwartete Kettenanzahl".to_owned());
+        }
+        for (chain_index, pattern_index) in scene.pattern_by_chain.into_iter().enumerate() {
+            self.apply_chain_pattern(chain_index, pattern_index)?;
+        }
+        self.active_scene = Some(scene_index);
+        Ok(())
     }
 
     pub fn add_chain_pattern(

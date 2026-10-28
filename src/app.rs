@@ -12,7 +12,8 @@ use crate::midi::{
     NoteInput, decode_note, note_off, note_on,
 };
 use crate::model::{
-    ArpMode, Direction, LaneKind, NoteEvent, Project, STEPS_PER_LANE, Step, StepDivision, StepState,
+    ArpMode, Direction, LaneKind, MidiClockMode, NoteEvent, Project, STEPS_PER_LANE,
+    SceneLaunchQuantization, Step, StepDivision, StepState,
 };
 use crate::persistence::{default_autosave_path, load_project, save_project_atomic};
 use crate::theme;
@@ -67,6 +68,17 @@ pub struct KlausApp {
     arp_running: bool,
     arp_status: String,
     promo_capture: bool,
+    queued_scene: Option<usize>,
+    scene_status: String,
+    transport_pulses: u64,
+    clock_accumulator: f64,
+    external_clock_pulses: u64,
+    last_external_clock: Option<Instant>,
+    clock_status: String,
+    project_path: Option<PathBuf>,
+    undo_stack: Vec<Project>,
+    redo_stack: Vec<Project>,
+    history_project: Project,
 }
 
 impl KlausApp {
@@ -124,6 +136,7 @@ impl KlausApp {
             .iter()
             .find_map(|chain| chain.route.output_name.clone());
         let last_saved_json = project.to_json().unwrap_or_default();
+        let history_project = project.clone();
 
         Self {
             project,
@@ -161,6 +174,17 @@ impl KlausApp {
             arp_running: false,
             arp_status: "ARP BEREIT".to_owned(),
             promo_capture,
+            queued_scene: None,
+            scene_status: "SCENE 01 AKTIV".to_owned(),
+            transport_pulses: 0,
+            clock_accumulator: 0.0,
+            external_clock_pulses: 0,
+            last_external_clock: None,
+            clock_status: "CLOCK INTERN".to_owned(),
+            project_path: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            history_project,
         }
     }
 
@@ -203,7 +227,7 @@ impl KlausApp {
                             .on_hover_text("Start / Pause")
                             .clicked()
                         {
-                            self.engine.toggle();
+                            self.toggle_transport();
                         }
                         if ui
                             .add_sized(
@@ -215,16 +239,20 @@ impl KlausApp {
                             .on_hover_text("Stopp und Rückkehr zum Anfang")
                             .clicked()
                         {
-                            self.engine.stop();
-                            self.midi.panic();
+                            self.stop_transport();
                         }
-                        ui.add(
+                        ui.add_enabled(
+                            self.project.midi_clock_mode != MidiClockMode::Follower,
                             egui::DragValue::new(&mut self.project.bpm)
                                 .range(20.0..=300.0)
                                 .speed(0.1)
                                 .suffix(" BPM"),
                         );
-                        ui.label(RichText::new("● INTERNAL").color(theme::CYAN).size(10.0));
+                        ui.label(
+                            RichText::new(clock_mode_label(self.project.midi_clock_mode))
+                                .color(theme::CYAN)
+                                .size(10.0),
+                        );
                     });
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -238,8 +266,7 @@ impl KlausApp {
                             .on_hover_text("All Notes Off")
                             .clicked()
                         {
-                            self.engine.stop();
-                            self.midi.panic();
+                            self.stop_transport();
                         }
                         if ui
                             .add_sized(
@@ -266,6 +293,199 @@ impl KlausApp {
                             self.mode = WorkMode::Edit;
                             self.live_skips.clear();
                         }
+                    });
+                });
+            });
+    }
+
+    fn project_bar(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::top("project_bar")
+            .exact_height(50.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(10, 15, 18))
+                    .inner_margin(egui::Margin::symmetric(12, 4)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("ÖFFNEN").clicked() {
+                        self.open_project();
+                    }
+                    if ui.button("SPEICHERN").clicked() {
+                        self.save_project();
+                    }
+                    if ui.button("SPEICHERN UNTER").clicked() {
+                        self.save_project_as();
+                    }
+                    ui.separator();
+                    if ui
+                        .add_enabled(!self.undo_stack.is_empty(), egui::Button::new("↶ UNDO"))
+                        .clicked()
+                    {
+                        self.undo();
+                    }
+                    if ui
+                        .add_enabled(!self.redo_stack.is_empty(), egui::Button::new("↷ REDO"))
+                        .clicked()
+                    {
+                        self.redo();
+                    }
+                    ui.separator();
+                    ui.label(RichText::new("MIDI CLOCK").color(theme::MUTED).size(9.0));
+                    let mut selected_mode = self.project.midi_clock_mode;
+                    egui::ComboBox::from_id_salt("midi_clock_mode")
+                        .selected_text(clock_mode_label(selected_mode))
+                        .show_ui(ui, |ui| {
+                            for mode in [
+                                MidiClockMode::Internal,
+                                MidiClockMode::Master,
+                                MidiClockMode::Follower,
+                            ] {
+                                ui.selectable_value(
+                                    &mut selected_mode,
+                                    mode,
+                                    clock_mode_label(mode),
+                                );
+                            }
+                        });
+                    if selected_mode != self.project.midi_clock_mode {
+                        self.stop_transport();
+                        self.project.midi_clock_mode = selected_mode;
+                        self.clock_status = match selected_mode {
+                            MidiClockMode::Internal => "CLOCK INTERN".to_owned(),
+                            MidiClockMode::Master => "CLOCK MASTER BEREIT".to_owned(),
+                            MidiClockMode::Follower => "WARTE AUF MIDI CLOCK".to_owned(),
+                        };
+                    }
+                    ui.label(
+                        RichText::new(&self.clock_status)
+                            .color(
+                                if self.project.midi_clock_mode == MidiClockMode::Follower
+                                    && self
+                                        .last_external_clock
+                                        .is_none_or(|last| last.elapsed() > Duration::from_secs(1))
+                                {
+                                    theme::ORANGE
+                                } else {
+                                    theme::ACID
+                                },
+                            )
+                            .size(9.0),
+                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let file = self
+                            .project_path
+                            .as_ref()
+                            .and_then(|path| path.file_name())
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("AUTOSAVE-PROJEKT");
+                        ui.label(RichText::new(file).color(theme::MUTED).size(9.0));
+                    });
+                });
+            });
+    }
+
+    fn scenes_bar(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::top("scenes_bar")
+            .exact_height(64.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(13, 19, 22))
+                    .inner_margin(egui::Margin::symmetric(12, 5)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("SCENES").color(theme::CYAN).strong());
+                    egui::ComboBox::from_id_salt("scene_quantization")
+                        .selected_text(scene_quantization_label(
+                            self.project.scene_launch_quantization,
+                        ))
+                        .show_ui(ui, |ui| {
+                            for quantization in [
+                                SceneLaunchQuantization::Immediate,
+                                SceneLaunchQuantization::NextStep,
+                                SceneLaunchQuantization::NextBeat,
+                                SceneLaunchQuantization::NextBar,
+                            ] {
+                                ui.selectable_value(
+                                    &mut self.project.scene_launch_quantization,
+                                    quantization,
+                                    scene_quantization_label(quantization),
+                                );
+                            }
+                        });
+                    if ui.button("+ SCENE").clicked() {
+                        let name = format!("SCENE {:02}", self.project.scenes.len() + 1);
+                        let index = self.project.add_scene(name.clone());
+                        self.scene_status = format!("{name} ANGELEGT");
+                        self.project.active_scene = Some(index);
+                    }
+                    if ui
+                        .add_enabled(
+                            self.project.active_scene.is_some(),
+                            egui::Button::new("AKTUALISIEREN"),
+                        )
+                        .on_hover_text("Aktuelle Kettenpatterns in der aktiven Szene speichern")
+                        .clicked()
+                        && let Some(index) = self.project.active_scene
+                    {
+                        if let Err(error) = self.project.capture_scene(index) {
+                            self.scene_status = format!("SZENENFEHLER · {error}");
+                        } else {
+                            self.scene_status = "SZENE AKTUALISIERT ✓".to_owned();
+                        }
+                    }
+                    if let Some(index) = self.project.active_scene
+                        && let Some(scene) = self.project.scenes.get_mut(index)
+                    {
+                        ui.add_sized(
+                            [132.0, 36.0],
+                            egui::TextEdit::singleline(&mut scene.name).hint_text("Szenenname"),
+                        );
+                    }
+                    ui.separator();
+                    let scenes: Vec<(usize, String)> = self
+                        .project
+                        .scenes
+                        .iter()
+                        .enumerate()
+                        .map(|(index, scene)| (index, scene.name.clone()))
+                        .collect();
+                    egui::ScrollArea::horizontal()
+                        .id_salt("scene_buttons")
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                for (index, name) in scenes {
+                                    let active = self.project.active_scene == Some(index);
+                                    let queued = self.queued_scene == Some(index);
+                                    let label = if queued {
+                                        format!("{name} · NEXT")
+                                    } else if active {
+                                        format!("{name} · AKTIV")
+                                    } else {
+                                        name
+                                    };
+                                    if ui
+                                        .add(egui::Button::new(label).fill(if active {
+                                            Color32::from_rgb(35, 95, 89)
+                                        } else if queued {
+                                            Color32::from_rgb(79, 54, 104)
+                                        } else {
+                                            theme::PANEL_RAISED
+                                        }))
+                                        .clicked()
+                                    {
+                                        self.request_scene(index);
+                                    }
+                                }
+                            });
+                        });
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(&self.scene_status)
+                                .color(theme::MUTED)
+                                .size(9.0),
+                        );
                     });
                 });
             });
@@ -443,6 +663,215 @@ impl KlausApp {
         }
     }
 
+    fn capture_history_change(&mut self) {
+        self.project.sync_all_active_patterns();
+        if self.project.midi_clock_mode == MidiClockMode::Follower {
+            self.history_project.bpm = self.project.bpm;
+        }
+        if self.project == self.history_project {
+            return;
+        }
+        self.undo_stack.push(self.history_project.clone());
+        if self.undo_stack.len() > 64 {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+        self.history_project = self.project.clone();
+    }
+
+    fn undo(&mut self) {
+        self.capture_history_change();
+        let Some(previous) = self.undo_stack.pop() else {
+            self.save_status = "NICHTS RÜCKGÄNGIG ZU MACHEN".to_owned();
+            return;
+        };
+        self.redo_stack.push(self.project.clone());
+        self.project = previous;
+        self.history_project = self.project.clone();
+        self.queued_scene = None;
+        self.save_status = "RÜCKGÄNGIG ✓".to_owned();
+    }
+
+    fn redo(&mut self) {
+        let Some(next) = self.redo_stack.pop() else {
+            self.save_status = "NICHTS ZU WIEDERHOLEN".to_owned();
+            return;
+        };
+        self.undo_stack.push(self.project.clone());
+        self.project = next;
+        self.history_project = self.project.clone();
+        self.queued_scene = None;
+        self.save_status = "WIEDERHOLEN ✓".to_owned();
+    }
+
+    fn save_project_to(&mut self, path: PathBuf) {
+        self.project.sync_all_active_patterns();
+        match save_project_atomic(&self.project, &path) {
+            Ok(()) => {
+                self.project_path = Some(path);
+                self.last_saved_json = self.project.to_json().unwrap_or_default();
+                self.save_status = "PROJEKT GESPEICHERT ✓".to_owned();
+            }
+            Err(error) => self.save_status = format!("SPEICHERFEHLER · {error}"),
+        }
+    }
+
+    fn save_project(&mut self) {
+        if let Some(path) = self.project_path.clone() {
+            self.save_project_to(path);
+        } else {
+            self.save_project_as();
+        }
+    }
+
+    fn save_project_as(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .set_title("K.L.A.U.S.-Projekt speichern")
+            .add_filter("K.L.A.U.S.-Projekt", &["json"])
+            .set_file_name("night-drive.klaus58.json")
+            .save_file()
+        {
+            self.save_project_to(path);
+        }
+    }
+
+    fn open_project(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("K.L.A.U.S.-Projekt öffnen")
+            .add_filter("K.L.A.U.S.-Projekt", &["json"])
+            .pick_file()
+        else {
+            return;
+        };
+        match load_project(&path) {
+            Ok(project) => {
+                self.engine.stop();
+                self.midi.panic();
+                self.project = project;
+                self.project_path = Some(path);
+                self.selected_lane = self.selected_lane.min(self.project.lanes.len() - 1);
+                self.selected_step = self.selected_step.min(STEPS_PER_LANE - 1);
+                self.queued_scene = None;
+                self.transport_pulses = 0;
+                self.clock_accumulator = 0.0;
+                self.undo_stack.clear();
+                self.redo_stack.clear();
+                self.history_project = self.project.clone();
+                self.last_saved_json = self.project.to_json().unwrap_or_default();
+                self.save_status = "PROJEKT GEÖFFNET ✓".to_owned();
+            }
+            Err(error) => self.save_status = format!("ÖFFNUNGSFEHLER · {error}"),
+        }
+    }
+
+    fn request_scene(&mut self, scene_index: usize) {
+        if !self.engine.playing
+            || self.project.scene_launch_quantization == SceneLaunchQuantization::Immediate
+        {
+            self.apply_scene_now(scene_index);
+        } else {
+            self.queued_scene = Some(scene_index);
+            let name = self
+                .project
+                .scenes
+                .get(scene_index)
+                .map_or("SZENE", |scene| scene.name.as_str());
+            self.scene_status = format!("{name} VORGEMERKT");
+        }
+    }
+
+    fn apply_scene_now(&mut self, scene_index: usize) {
+        match self.project.apply_scene(scene_index) {
+            Ok(()) => {
+                self.queued_scene = None;
+                let name = self
+                    .project
+                    .scenes
+                    .get(scene_index)
+                    .map_or("SZENE", |scene| scene.name.as_str());
+                self.scene_status = format!("{name} AKTIV");
+            }
+            Err(error) => self.scene_status = format!("SZENENFEHLER · {error}"),
+        }
+    }
+
+    fn maybe_launch_queued_scene(&mut self, previous_pulse: u64, current_pulse: u64) {
+        let Some(scene_index) = self.queued_scene else {
+            return;
+        };
+        let Some(boundary) = self.project.scene_launch_quantization.pulses() else {
+            self.apply_scene_now(scene_index);
+            return;
+        };
+        if quantization_boundary_crossed(previous_pulse, current_pulse, boundary) {
+            self.apply_scene_now(scene_index);
+        }
+    }
+
+    fn advance_transport_clock(&mut self, delta_seconds: f64) -> f64 {
+        if !self.engine.playing {
+            self.external_clock_pulses = 0;
+            return 0.0;
+        }
+        match self.project.midi_clock_mode {
+            MidiClockMode::Follower => {
+                let pulses = std::mem::take(&mut self.external_clock_pulses);
+                let previous = self.transport_pulses;
+                self.transport_pulses = self.transport_pulses.wrapping_add(pulses);
+                self.maybe_launch_queued_scene(previous, self.transport_pulses);
+                f64::from(pulses as u32) * 60.0 / (f64::from(self.project.bpm) * 24.0)
+            }
+            MidiClockMode::Internal | MidiClockMode::Master => {
+                self.clock_accumulator +=
+                    delta_seconds.max(0.0) * f64::from(self.project.bpm) / 60.0 * 24.0;
+                let pulses = self.clock_accumulator.floor() as u64;
+                self.clock_accumulator -= pulses as f64;
+                let previous = self.transport_pulses;
+                self.transport_pulses = self.transport_pulses.wrapping_add(pulses);
+                if self.project.midi_clock_mode == MidiClockMode::Master {
+                    let now = Instant::now();
+                    for _ in 0..pulses {
+                        self.midi.schedule_realtime(now, 0xF8);
+                    }
+                }
+                self.maybe_launch_queued_scene(previous, self.transport_pulses);
+                delta_seconds
+            }
+        }
+    }
+
+    fn toggle_transport(&mut self) {
+        if self.engine.playing {
+            self.engine.pause();
+            if self.project.midi_clock_mode == MidiClockMode::Master {
+                self.midi.schedule_realtime(Instant::now(), 0xFC);
+            }
+        } else {
+            if self.project.midi_clock_mode == MidiClockMode::Master {
+                self.midi.schedule_realtime(
+                    Instant::now(),
+                    if self.transport_pulses == 0 {
+                        0xFA
+                    } else {
+                        0xFB
+                    },
+                );
+            }
+            self.engine.start();
+        }
+    }
+
+    fn stop_transport(&mut self) {
+        if self.project.midi_clock_mode == MidiClockMode::Master {
+            self.midi.schedule_realtime(Instant::now(), 0xFC);
+        }
+        self.engine.stop();
+        self.midi.panic();
+        self.transport_pulses = 0;
+        self.clock_accumulator = 0.0;
+        self.external_clock_pulses = 0;
+    }
+
     fn poll_midi_events(&mut self) {
         while let Some(event) = self.midi.poll_event() {
             match event {
@@ -470,6 +899,48 @@ impl KlausApp {
     }
 
     fn handle_midi_input(&mut self, message: MidiInputMessage) {
+        if self.project.midi_clock_mode == MidiClockMode::Follower && message.len >= 1 {
+            match message.data[0] {
+                0xF8 => {
+                    let now = Instant::now();
+                    if let Some(previous) = self.last_external_clock {
+                        let elapsed = now.duration_since(previous).as_secs_f64();
+                        if elapsed > 0.001 {
+                            let measured = (60.0 / (elapsed * 24.0)).clamp(20.0, 300.0) as f32;
+                            self.project.bpm = self.project.bpm * 0.8 + measured * 0.2;
+                        }
+                    }
+                    self.last_external_clock = Some(now);
+                    self.clock_status = format!("CLOCK FOLLOWER · {:.1} BPM", self.project.bpm);
+                    if self.engine.playing {
+                        self.external_clock_pulses = self.external_clock_pulses.wrapping_add(1);
+                    }
+                    return;
+                }
+                0xFA => {
+                    self.engine.stop();
+                    self.transport_pulses = 0;
+                    self.clock_accumulator = 0.0;
+                    self.external_clock_pulses = 0;
+                    self.engine.start();
+                    self.clock_status = "CLOCK START EMPFANGEN".to_owned();
+                    return;
+                }
+                0xFB => {
+                    self.engine.start();
+                    self.clock_status = "CLOCK CONTINUE EMPFANGEN".to_owned();
+                    return;
+                }
+                0xFC => {
+                    self.engine.pause();
+                    self.midi.panic();
+                    self.clock_status = "CLOCK STOP EMPFANGEN".to_owned();
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         let decoded = decode_note(message);
         let selected_chain = self.selected_chain_index();
         let arp_enabled = selected_chain
@@ -741,7 +1212,10 @@ impl KlausApp {
             format!("ARP TAKE {take_number:02}"),
             lane_steps,
         ) {
-            Ok(_) => self.arp_status = format!("ARP TAKE {take_number:02} AKTIV"),
+            Ok(_) => {
+                self.project.active_scene = None;
+                self.arp_status = format!("ARP TAKE {take_number:02} AKTIV");
+            }
             Err(error) => self.arp_status = format!("RENDER-FEHLER · {error}"),
         }
     }
@@ -1085,6 +1559,7 @@ impl KlausApp {
                             {
                                 self.arp_status = format!("PATTERN-FEHLER · {error}");
                             } else {
+                                self.project.active_scene = None;
                                 self.engine.stop();
                                 self.midi.panic();
                                 self.live_skips.clear();
@@ -1398,7 +1873,7 @@ impl KlausApp {
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new("v0.4.0 · PROTOTYPE").color(theme::MUTED));
+                        ui.label(RichText::new("v0.5.0 · PROTOTYPE").color(theme::MUTED));
                     });
                 });
             });
@@ -1409,17 +1884,62 @@ impl KlausApp {
 impl eframe::App for KlausApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_midi_events();
+        let save_as = ctx.input(|input| {
+            input.modifiers.command && input.modifiers.shift && input.key_pressed(egui::Key::S)
+        });
+        let save = ctx.input(|input| {
+            input.modifiers.command && !input.modifiers.shift && input.key_pressed(egui::Key::S)
+        });
+        let open = ctx.input(|input| input.modifiers.command && input.key_pressed(egui::Key::O));
+        let undo = ctx.input(|input| {
+            input.modifiers.command && !input.modifiers.shift && input.key_pressed(egui::Key::Z)
+        });
+        let redo = ctx.input(|input| {
+            input.modifiers.command
+                && (input.key_pressed(egui::Key::Y)
+                    || (input.modifiers.shift && input.key_pressed(egui::Key::Z)))
+        });
+        if save_as {
+            self.save_project_as();
+        } else if save {
+            self.save_project();
+        }
+        if open {
+            self.open_project();
+        }
+        if undo {
+            self.undo();
+        }
+        if redo {
+            self.redo();
+        }
+        self.capture_history_change();
         self.autosave_if_needed();
         let now = Instant::now();
         let delta = now.duration_since(self.last_frame).as_secs_f64().min(0.1);
         self.last_frame = now;
-        if self.update_arpeggiator(delta) {
+        let transport_delta = self.advance_transport_clock(delta);
+        if self.project.midi_clock_mode == MidiClockMode::Follower
+            && self
+                .last_external_clock
+                .is_none_or(|last| last.elapsed() > Duration::from_secs(1))
+        {
+            self.clock_status = "WARTE AUF MIDI CLOCK".to_owned();
+        }
+        let arp_delta = if self.project.midi_clock_mode == MidiClockMode::Follower {
+            transport_delta
+        } else {
+            delta
+        };
+        if self.update_arpeggiator(arp_delta) {
             ctx.request_repaint();
         }
         if self.arp_running {
             ctx.request_repaint_after(Duration::from_millis(2));
         }
-        let triggers = self.engine.update(&self.project, &self.live_skips, delta);
+        let triggers = self
+            .engine
+            .update(&self.project, &self.live_skips, transport_delta);
         if !triggers.is_empty() {
             self.schedule_midi(&triggers);
             ctx.request_repaint();
@@ -1429,7 +1949,9 @@ impl eframe::App for KlausApp {
         }
 
         self.top_bar(ctx);
+        self.project_bar(ctx);
         self.midi_bar(ctx);
+        self.scenes_bar(ctx);
         self.piano_roll(ctx);
         self.inspector(ctx);
         self.matrix(ctx);
@@ -1472,6 +1994,27 @@ fn direction_label(direction: Direction) -> &'static str {
         Direction::PingPong => "PING-PONG",
         Direction::Random => "ZUFALL",
     }
+}
+
+fn clock_mode_label(mode: MidiClockMode) -> &'static str {
+    match mode {
+        MidiClockMode::Internal => "INTERNAL",
+        MidiClockMode::Master => "MASTER",
+        MidiClockMode::Follower => "FOLLOWER",
+    }
+}
+
+fn scene_quantization_label(quantization: SceneLaunchQuantization) -> &'static str {
+    match quantization {
+        SceneLaunchQuantization::Immediate => "SOFORT",
+        SceneLaunchQuantization::NextStep => "NÄCHSTER STEP",
+        SceneLaunchQuantization::NextBeat => "NÄCHSTER BEAT",
+        SceneLaunchQuantization::NextBar => "NÄCHSTER TAKT",
+    }
+}
+
+fn quantization_boundary_crossed(previous: u64, current: u64, boundary: u64) -> bool {
+    boundary > 0 && previous / boundary < current / boundary
 }
 
 fn division_label(division: StepDivision) -> &'static str {
@@ -1584,7 +2127,7 @@ fn touch_target(ui: &mut egui::Ui, label: &str) -> egui::Response {
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::build_arp_sequence;
+    use super::{build_arp_sequence, quantization_boundary_crossed};
     use crate::model::ArpMode;
 
     #[test]
@@ -1609,5 +2152,13 @@ mod tests {
             build_arp_sequence(&notes, &[67, 60, 64], ArpMode::AsPlayed, 1),
             vec![67, 60, 64]
         );
+    }
+
+    #[test]
+    fn scene_quantization_only_fires_when_boundary_is_crossed() {
+        assert!(!quantization_boundary_crossed(23, 23, 24));
+        assert!(quantization_boundary_crossed(23, 24, 24));
+        assert!(!quantization_boundary_crossed(24, 47, 24));
+        assert!(quantization_boundary_crossed(95, 97, 96));
     }
 }
