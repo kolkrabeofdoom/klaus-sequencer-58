@@ -22,6 +22,7 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
     project.ensure_lane_coverage();
     project.ensure_patterns();
     project.ensure_scenes();
+    project.ensure_generation_plan();
     project.format_version = PROJECT_FORMAT_VERSION;
     project.validate_chains()?;
     Ok(project)
@@ -99,7 +100,7 @@ mod tests {
     }
 
     #[test]
-    fn version_two_projects_receive_scenes_and_clock_defaults() {
+    fn version_two_projects_receive_all_current_defaults() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock")
@@ -113,6 +114,7 @@ mod tests {
         object.remove("scene_launch_quantization");
         object.remove("midi_clock_mode");
         object.remove("performance_timeline");
+        object.remove("generation_plan");
         fs::write(
             &path,
             serde_json::to_vec_pretty(&value).expect("serialize legacy project"),
@@ -129,6 +131,10 @@ mod tests {
         assert_eq!(
             restored.midi_clock_mode,
             crate::model::MidiClockMode::Internal
+        );
+        assert_eq!(
+            restored.generation_plan.lane_configs.len(),
+            restored.lanes.len()
         );
         let _ = fs::remove_file(path);
     }

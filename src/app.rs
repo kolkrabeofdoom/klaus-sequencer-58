@@ -7,13 +7,14 @@ use eframe::egui::{self, Align, Color32, Layout, RichText, Sense, Stroke, Textur
 use crate::engine::{
     PreviewEngine, StepTrigger, division_seconds, next_timed_index, probability_hits,
 };
+use crate::generator::{GenerationMode, generate_lane};
 use crate::midi::{
     MidiEvent, MidiInputEvent, MidiInputMessage, MidiInputService, MidiService, MidiStatus,
     NoteInput, decode_note, note_off, note_on,
 };
 use crate::model::{
-    ArpMode, Direction, LaneKind, MidiClockMode, NoteEvent, Project, STEPS_PER_LANE,
-    SceneLaunchQuantization, Step, StepDivision, StepState,
+    ArpMode, Direction, GeneratorRole, LaneGeneratorConfig, LaneKind, MidiClockMode, MusicalScale,
+    NoteEvent, Project, STEPS_PER_LANE, SceneLaunchQuantization, Step, StepDivision, StepState,
 };
 use crate::persistence::{default_autosave_path, load_project, save_project_atomic};
 use crate::theme;
@@ -30,6 +31,24 @@ enum InputMode {
     ChordCapture,
     StepRecord,
     QuantizedLive,
+}
+
+#[derive(Debug, Clone)]
+struct GeneratorPreview {
+    lane: usize,
+    steps: Vec<Step>,
+    seed: u64,
+    mode: GenerationMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GeneratorAction {
+    Generate,
+    Variant,
+    Mutate,
+    Apply,
+    Discard,
+    ResetProfile,
 }
 
 pub struct KlausApp {
@@ -78,6 +97,9 @@ pub struct KlausApp {
     undo_stack: Vec<Project>,
     redo_stack: Vec<Project>,
     history_project: Project,
+    generator_open: bool,
+    generator_preview: Option<GeneratorPreview>,
+    generator_status: String,
 }
 
 impl KlausApp {
@@ -136,12 +158,25 @@ impl KlausApp {
             .find_map(|chain| chain.route.output_name.clone());
         let last_saved_json = project.to_json().unwrap_or_default();
         let history_project = project.clone();
+        let selected_lane = if promo_capture { 4 } else { 0 };
+        let generator_preview = promo_capture.then(|| GeneratorPreview {
+            lane: selected_lane,
+            steps: generate_lane(
+                &project.generation_plan,
+                selected_lane,
+                project.lanes[selected_lane].kind,
+                &project.lanes[selected_lane].steps,
+                GenerationMode::Generate,
+            ),
+            seed: project.generation_plan.seed,
+            mode: GenerationMode::Generate,
+        });
 
         Self {
             project,
             engine: PreviewEngine::default(),
             mode: WorkMode::Edit,
-            selected_lane: if promo_capture { 4 } else { 0 },
+            selected_lane,
             selected_step: 0,
             live_skips: BTreeSet::new(),
             global_live_skip: false,
@@ -183,6 +218,13 @@ impl KlausApp {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             history_project,
+            generator_open: promo_capture,
+            generator_preview,
+            generator_status: if promo_capture {
+                "PROMO-VORSCHAU · SEED 58".to_owned()
+            } else {
+                "KLAUS WARTET AUF EIN MOTIV".to_owned()
+            },
         }
     }
 
@@ -328,6 +370,21 @@ impl KlausApp {
                     {
                         self.redo();
                     }
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new("✦ KOSMISCHER GENERATOR").color(theme::ACID),
+                            )
+                            .fill(theme::PANEL_RAISED)
+                            .stroke(Stroke::new(1.0, theme::ACID.gamma_multiply(0.7))),
+                        )
+                        .on_hover_text(
+                            "Berlin-School-inspirierte Motive für die gewählte Reihe erzeugen",
+                        )
+                        .clicked()
+                    {
+                        self.generator_open = true;
+                    }
                     ui.separator();
                     ui.label(RichText::new("MIDI CLOCK").color(theme::MUTED).size(9.0));
                     let mut selected_mode = self.project.midi_clock_mode;
@@ -381,6 +438,317 @@ impl KlausApp {
                     });
                 });
             });
+    }
+
+    fn prepare_generator_preview(&mut self, mode: GenerationMode, advance_seed: bool) {
+        self.project.ensure_generation_plan();
+        if advance_seed {
+            self.project.generation_plan.seed =
+                self.project.generation_plan.seed.wrapping_add(1).max(1);
+        }
+        let lane = self.selected_lane;
+        let kind = self.project.lanes[lane].kind;
+        let current = self.project.lanes[lane].steps.clone();
+        let steps = generate_lane(&self.project.generation_plan, lane, kind, &current, mode);
+        self.generator_preview = Some(GeneratorPreview {
+            lane,
+            steps,
+            seed: self.project.generation_plan.seed,
+            mode,
+        });
+        self.generator_status = match mode {
+            GenerationMode::Generate => format!(
+                "VORSCHAU FÜR REIHE {} · SEED {}",
+                lane + 1,
+                self.project.generation_plan.seed
+            ),
+            GenerationMode::Mutate => format!(
+                "MUTATION FÜR REIHE {} · SEED {}",
+                lane + 1,
+                self.project.generation_plan.seed
+            ),
+        };
+    }
+
+    fn apply_generator_preview(&mut self) {
+        let Some(preview) = self.generator_preview.take() else {
+            return;
+        };
+        if preview.lane != self.selected_lane {
+            self.generator_status = "VORSCHAU GEHÖRT ZU EINER ANDEREN REIHE".to_owned();
+            self.generator_preview = Some(preview);
+            return;
+        }
+        self.project.lanes[preview.lane].steps = preview.steps;
+        self.project.active_scene = None;
+        if let Some(chain_index) = self.selected_chain_index() {
+            let _ = self.project.sync_active_pattern_from_lanes(chain_index);
+        }
+        self.generator_status = format!("REIHE {} ÜBERNOMMEN ✓", preview.lane + 1);
+    }
+
+    fn generator_window(&mut self, ctx: &egui::Context) {
+        if !self.generator_open {
+            return;
+        }
+        self.project.ensure_generation_plan();
+        let mut open = self.generator_open;
+        let lane_index = self.selected_lane;
+        let lane_kind = self.project.lanes[lane_index].kind;
+        let lane_name = self.project.lanes[lane_index].name.clone();
+        let mut config = self.project.generation_plan.lane_configs[lane_index].clone();
+        let mut root = self.project.generation_plan.root;
+        let mut scale = self.project.generation_plan.scale;
+        let mut seed = self.project.generation_plan.seed;
+        let preview = self.generator_preview.clone();
+        let status = self.generator_status.clone();
+        let mut action = None;
+
+        egui::Window::new("✦ KOSMISCHER GENERATOR")
+            .open(&mut open)
+            .default_width(650.0)
+            .resizable(true)
+            .frame(egui::Frame::window(&ctx.style()).fill(Color32::from_rgb(10, 15, 18)))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.heading(
+                        RichText::new(format!("REIHE {} · {}", lane_index + 1, lane_name))
+                            .color(theme::CYAN),
+                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(if lane_kind == LaneKind::Drums {
+                                "DRUM-LABOR"
+                            } else {
+                                "BERLIN-SCHOOL-MOTIVLABOR"
+                            })
+                            .color(theme::MUTED)
+                            .size(9.0),
+                        );
+                    });
+                });
+                ui.label(
+                    RichText::new(
+                        "Regelbasiert, reproduzierbar und ohne fremde Kompositionen zu klonen. Klaus besitzt schließlich Manieren.",
+                    )
+                    .color(theme::MUTED)
+                    .italics(),
+                );
+                ui.separator();
+
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("TONZENTRUM").color(theme::MUTED).size(9.0));
+                    egui::ComboBox::from_id_salt("generator_root")
+                        .selected_text(root_name(root))
+                        .show_ui(ui, |ui| {
+                            for candidate in 0..12 {
+                                ui.selectable_value(&mut root, candidate, root_name(candidate));
+                            }
+                        });
+                    if lane_kind == LaneKind::Melody {
+                        egui::ComboBox::from_id_salt("generator_scale")
+                            .selected_text(scale_label(scale))
+                            .show_ui(ui, |ui| {
+                                for candidate in all_scales() {
+                                    ui.selectable_value(
+                                        &mut scale,
+                                        candidate,
+                                        scale_label(candidate),
+                                    );
+                                }
+                            });
+                    }
+                    ui.separator();
+                    ui.label(RichText::new("SEED").color(theme::MUTED).size(9.0));
+                    ui.add(egui::DragValue::new(&mut seed).speed(1.0));
+                    ui.label(
+                        RichText::new("gleicher Seed = gleiches Motiv")
+                            .color(theme::MUTED)
+                            .size(9.0),
+                    );
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("ROLLE").color(theme::MUTED).size(9.0));
+                    egui::ComboBox::from_id_salt("generator_role")
+                        .selected_text(role_label(config.role))
+                        .show_ui(ui, |ui| {
+                            for role in roles_for_kind(lane_kind).iter().copied() {
+                                ui.selectable_value(&mut config.role, role, role_label(role));
+                            }
+                        });
+                    if lane_kind == LaneKind::Melody {
+                        ui.separator();
+                        ui.label(RichText::new("MIDI-BEREICH").color(theme::MUTED).size(9.0));
+                        ui.add(
+                            egui::DragValue::new(&mut config.min_pitch)
+                                .range(0..=127)
+                                .prefix("von "),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut config.max_pitch)
+                                .range(0..=127)
+                                .prefix("bis "),
+                        );
+                    }
+                });
+
+                ui.columns(2, |columns| {
+                    columns[0].label(
+                        RichText::new("STRUKTUR")
+                            .color(theme::ORANGE)
+                            .strong(),
+                    );
+                    columns[0].add(
+                        egui::Slider::new(&mut config.motif_length, 1..=11)
+                            .text("Motivlänge"),
+                    );
+                    columns[0].add(
+                        egui::Slider::new(&mut config.effective_length, 1..=16)
+                            .text("effektive Länge"),
+                    );
+                    columns[0].add(
+                        egui::Slider::new(&mut config.density, 1..=100).text("Dichte %"),
+                    );
+                    columns[0]
+                        .add(egui::Slider::new(&mut config.order, 0..=100).text("Ordnung %"));
+                    columns[0].add(
+                        egui::Slider::new(&mut config.movement, 0..=100).text("Bewegung %"),
+                    );
+
+                    columns[1].label(
+                        RichText::new("LEBENDIGKEIT")
+                            .color(theme::ORANGE)
+                            .strong(),
+                    );
+                    columns[1].add(
+                        egui::Slider::new(&mut config.heat, 0..=100)
+                            .text("Hitze / Ratchets %"),
+                    );
+                    columns[1]
+                        .add(egui::Slider::new(&mut config.drift, 0..=100).text("Drift %"));
+                    columns[1].add(
+                        egui::Slider::new(&mut config.mutation, 0..=100).text("Mutation %"),
+                    );
+                    columns[1].checkbox(&mut config.lock_notes, "Noten sperren");
+                    columns[1].checkbox(&mut config.lock_rhythm, "Rhythmus sperren");
+                    columns[1].checkbox(&mut config.lock_expression, "Ausdruck sperren");
+                });
+
+                if config.min_pitch > config.max_pitch {
+                    std::mem::swap(&mut config.min_pitch, &mut config.max_pitch);
+                }
+                config.motif_length = config.motif_length.clamp(1, 11);
+                config.effective_length = config.effective_length.clamp(1, 16);
+
+                ui.separator();
+                ui.label(RichText::new("VORSCHAU").color(theme::MUTED).size(9.0));
+                ui.horizontal(|ui| {
+                    let preview_matches = preview.as_ref().is_some_and(|value| value.lane == lane_index);
+                    for step_index in 0..STEPS_PER_LANE {
+                        let step = preview
+                            .as_ref()
+                            .filter(|value| value.lane == lane_index)
+                            .map(|value| &value.steps[step_index]);
+                        let (label, fill) = match step {
+                            Some(step) if step.state == StepState::Skip => {
+                                ("×".to_owned(), Color32::from_rgb(45, 27, 31))
+                            }
+                            Some(step) if step.state == StepState::Active => (
+                                if step.ratchets > 1 {
+                                    step.ratchets.to_string()
+                                } else if step.notes.len() > 1 {
+                                    format!("{}n", step.notes.len())
+                                } else {
+                                    "•".to_owned()
+                                },
+                                theme::lane_color(lane_index).gamma_multiply(0.72),
+                            ),
+                            _ => (String::new(), Color32::from_rgb(20, 27, 30)),
+                        };
+                        ui.add_sized(
+                            [28.0, 32.0],
+                            egui::Button::new(label)
+                                .fill(fill)
+                                .stroke(Stroke::new(1.0, Color32::from_rgb(56, 70, 75))),
+                        );
+                    }
+                    if !preview_matches {
+                        ui.label(RichText::new("noch kosmisch leer").color(theme::MUTED));
+                    }
+                });
+                if let Some(value) = preview.as_ref().filter(|value| value.lane == lane_index) {
+                    ui.label(
+                        RichText::new(format!(
+                            "{} · SEED {}",
+                            generation_mode_label(value.mode),
+                            value.seed
+                        ))
+                        .color(theme::CYAN)
+                        .size(9.0),
+                    );
+                }
+
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("✦ ERZEUGEN").clicked() {
+                        action = Some(GeneratorAction::Generate);
+                    }
+                    if ui.button("↻ VARIANTE").clicked() {
+                        action = Some(GeneratorAction::Variant);
+                    }
+                    if ui.button("≈ MUTIEREN").clicked() {
+                        action = Some(GeneratorAction::Mutate);
+                    }
+                    if ui
+                        .add_enabled(
+                            preview.as_ref().is_some_and(|value| value.lane == lane_index),
+                            egui::Button::new("ÜBERNEHMEN"),
+                        )
+                        .clicked()
+                    {
+                        action = Some(GeneratorAction::Apply);
+                    }
+                    if ui
+                        .add_enabled(preview.is_some(), egui::Button::new("VERWERFEN"))
+                        .clicked()
+                    {
+                        action = Some(GeneratorAction::Discard);
+                    }
+                    if ui.button("ROLLENPROFIL ZURÜCKSETZEN").clicked() {
+                        action = Some(GeneratorAction::ResetProfile);
+                    }
+                });
+                ui.label(RichText::new(status).color(theme::ACID).size(9.0));
+            });
+
+        self.generator_open = open;
+        self.project.generation_plan.root = root % 12;
+        self.project.generation_plan.scale = scale;
+        self.project.generation_plan.seed = seed.max(1);
+        self.project.generation_plan.lane_configs[lane_index] = config;
+        match action {
+            Some(GeneratorAction::Generate) => {
+                self.prepare_generator_preview(GenerationMode::Generate, false)
+            }
+            Some(GeneratorAction::Variant) => {
+                self.prepare_generator_preview(GenerationMode::Generate, true)
+            }
+            Some(GeneratorAction::Mutate) => {
+                self.prepare_generator_preview(GenerationMode::Mutate, true)
+            }
+            Some(GeneratorAction::Apply) => self.apply_generator_preview(),
+            Some(GeneratorAction::Discard) => {
+                self.generator_preview = None;
+                self.generator_status = "VORSCHAU VERWORFEN".to_owned();
+            }
+            Some(GeneratorAction::ResetProfile) => {
+                self.project.generation_plan.lane_configs[lane_index] =
+                    LaneGeneratorConfig::for_lane(lane_index, lane_kind);
+                self.generator_preview = None;
+                self.generator_status = "ROLLENPROFIL ZURÜCKGESETZT".to_owned();
+            }
+            None => {}
+        }
     }
 
     fn scenes_bar(&mut self, ctx: &egui::Context) {
@@ -1586,6 +1954,13 @@ impl KlausApp {
             )
             .show(ctx, |ui| {
                 let lane_kind = self.project.lanes[self.selected_lane].kind;
+                let generator_config =
+                    &self.project.generation_plan.lane_configs[self.selected_lane];
+                let scale_text = format!(
+                    "{} {} · SCALE FOLD",
+                    root_name(self.project.generation_plan.root),
+                    scale_label(self.project.generation_plan.scale)
+                );
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new(if lane_kind == LaneKind::Drums {
@@ -1595,7 +1970,7 @@ impl KlausApp {
                         })
                         .strong(),
                     );
-                    ui.label(RichText::new("D DORIAN · SCALE FOLD").color(theme::MUTED));
+                    ui.label(RichText::new(scale_text).color(theme::MUTED));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(
                             RichText::new("GETEILT · FULLSCREEN SPÄTER")
@@ -1606,8 +1981,35 @@ impl KlausApp {
                 });
                 ui.separator();
 
-                let base_pitch = if lane_kind == LaneKind::Drums { 36 } else { 48 };
-                let row_count = if lane_kind == LaneKind::Drums { 8 } else { 12 };
+                let (base_pitch, row_count) = if lane_kind == LaneKind::Drums {
+                    (36, 8_usize)
+                } else {
+                    let note_minimum = self.project.lanes[self.selected_lane]
+                        .steps
+                        .iter()
+                        .flat_map(|step| step.notes.iter().map(|note| note.pitch))
+                        .min();
+                    let note_maximum = self.project.lanes[self.selected_lane]
+                        .steps
+                        .iter()
+                        .flat_map(|step| step.notes.iter().map(|note| note.pitch))
+                        .max();
+                    let (minimum, desired_maximum) = match (note_minimum, note_maximum) {
+                        (Some(minimum), Some(maximum)) => {
+                            (minimum.saturating_sub(2), maximum.saturating_add(2))
+                        }
+                        _ => (generator_config.min_pitch, generator_config.max_pitch),
+                    };
+                    let minimum = minimum.min(116);
+                    let maximum = desired_maximum
+                        .max(minimum.saturating_add(11))
+                        .min(minimum.saturating_add(23))
+                        .min(127);
+                    (
+                        minimum,
+                        usize::from(maximum.saturating_sub(minimum) + 1).max(12),
+                    )
+                };
                 let cell_width =
                     ((ui.available_width() - 72.0) / STEPS_PER_LANE as f32 - 3.0).clamp(22.0, 44.0);
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -1871,7 +2273,7 @@ impl KlausApp {
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new("v0.5.1 · PROTOTYPE").color(theme::MUTED));
+                        ui.label(RichText::new("v0.6.0 · PROTOTYPE").color(theme::MUTED));
                     });
                 });
             });
@@ -1953,6 +2355,7 @@ impl eframe::App for KlausApp {
         self.piano_roll(ctx);
         self.inspector(ctx);
         self.matrix(ctx);
+        self.generator_window(ctx);
         self.about_window(ctx);
     }
 }
@@ -1961,6 +2364,81 @@ impl Drop for KlausApp {
     fn drop(&mut self) {
         self.project.sync_all_active_patterns();
         let _ = save_project_atomic(&self.project, &self.autosave_path);
+    }
+}
+
+fn root_name(root: u8) -> &'static str {
+    [
+        "C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B",
+    ][usize::from(root % 12)]
+}
+
+fn all_scales() -> [MusicalScale; 11] {
+    [
+        MusicalScale::Major,
+        MusicalScale::NaturalMinor,
+        MusicalScale::HarmonicMinor,
+        MusicalScale::Dorian,
+        MusicalScale::Phrygian,
+        MusicalScale::Lydian,
+        MusicalScale::Mixolydian,
+        MusicalScale::MajorPentatonic,
+        MusicalScale::MinorPentatonic,
+        MusicalScale::WholeTone,
+        MusicalScale::Chromatic,
+    ]
+}
+
+fn scale_label(scale: MusicalScale) -> &'static str {
+    match scale {
+        MusicalScale::Major => "MAJOR",
+        MusicalScale::NaturalMinor => "NATURAL MINOR",
+        MusicalScale::HarmonicMinor => "HARMONIC MINOR",
+        MusicalScale::Dorian => "DORIAN",
+        MusicalScale::Phrygian => "PHRYGIAN",
+        MusicalScale::Lydian => "LYDIAN",
+        MusicalScale::Mixolydian => "MIXOLYDIAN",
+        MusicalScale::MajorPentatonic => "MAJOR PENTATONIC",
+        MusicalScale::MinorPentatonic => "MINOR PENTATONIC",
+        MusicalScale::WholeTone => "WHOLE TONE",
+        MusicalScale::Chromatic => "CHROMATIC",
+    }
+}
+
+fn roles_for_kind(kind: LaneKind) -> &'static [GeneratorRole] {
+    const MELODY: &[GeneratorRole] = &[
+        GeneratorRole::BassPulse,
+        GeneratorRole::Ostinato,
+        GeneratorRole::Arpeggio,
+        GeneratorRole::ChordPulse,
+        GeneratorRole::CounterMelody,
+        GeneratorRole::MelodicSatellite,
+    ];
+    const DRUMS: &[GeneratorRole] = &[GeneratorRole::DrumPulse, GeneratorRole::DrumPercussion];
+    if kind == LaneKind::Drums {
+        DRUMS
+    } else {
+        MELODY
+    }
+}
+
+fn role_label(role: GeneratorRole) -> &'static str {
+    match role {
+        GeneratorRole::BassPulse => "BASS-PULS",
+        GeneratorRole::Ostinato => "OSTINATO",
+        GeneratorRole::Arpeggio => "ARPEGGIO",
+        GeneratorRole::ChordPulse => "AKKORD-PULS",
+        GeneratorRole::CounterMelody => "GEGENMELODIE",
+        GeneratorRole::MelodicSatellite => "MELODISCHER SATELLIT",
+        GeneratorRole::DrumPulse => "DRUM-PULS",
+        GeneratorRole::DrumPercussion => "PERCUSSION-SATELLIT",
+    }
+}
+
+fn generation_mode_label(mode: GenerationMode) -> &'static str {
+    match mode {
+        GenerationMode::Generate => "ERZEUGT",
+        GenerationMode::Mutate => "MUTIERT",
     }
 }
 

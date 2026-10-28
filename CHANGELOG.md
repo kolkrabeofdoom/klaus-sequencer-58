@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0 – Klaus würfelt kontrolliert
+
+- kreativer, Berlin-School-inspirierter Generator für die jeweils gewählte Reihe
+- elf Tonleitern, frei wählbares Tonzentrum und begrenzbarer MIDI-Tonumfang
+- acht musikalische Rollen von Bass-Puls und Ostinato bis Drum-Puls und Percussion-Satellit
+- reproduzierbare Seeds: dieselben Einstellungen erzeugen dasselbe Motiv
+- getrennte Regler für Motivlänge, effektive Länge, Dichte, Ordnung, Bewegung, Hitze, Drift und Mutation
+- Vorschau mit explizitem Übernehmen oder Verwerfen statt ungefragter Projektmutation
+- Varianten und anteilige Mutation bestehender Reihen
+- Sperren für Noten, Rhythmus und Ausdruck
+- rollenabhängige Polyphonie, Ratchets, Probability, Velocity und Gates
+- Generatorplan für alle acht Reihen im Projektformat 4; szenenweite Erzeugung damit vorbereitet
+- Piano-Roll passt seinen Tonumfang an Generatorprofil und vorhandene Noten an
+- automatische Migration älterer Projektdateien
+
 ## 0.5.1 – Klaus räumt den Inspector auf
 
 - Statusspruch im Inspector aus dem überlagernden Bottom-up-Layout gelöst

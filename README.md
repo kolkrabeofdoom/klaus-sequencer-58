@@ -1,6 +1,6 @@
 # K.L.A.U.S. Sequencer 58
 
-![K.L.A.U.S. Sequencer 58](KLAUS-Promobild-v0.5.png)
+![K.L.A.U.S. Sequencer 58](KLAUS-Promobild-v0.6.png)
 
 **Ketten-Looper für Arpeggien und unabhängige Steps**  
 Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in Rust, inspiriert von Berlin School, Modularsystemen, polyrhythmischen Verschiebungen und der begründeten Überzeugung, dass ein Step mehr als eine Note tragen darf.
@@ -8,7 +8,7 @@ Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in 
 > „Warum nur einen? Alle brauchen zwei 303s.“  
 > — Klaus, vermutlich während einer völlig sachlichen Budgetbesprechung
 
-[![Version](https://img.shields.io/badge/version-0.5.1-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
+[![Version](https://img.shields.io/badge/version-0.6.0-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.89%2B-cyan)](https://www.rust-lang.org/)
 [![Plattform](https://img.shields.io/badge/platform-Windows-57d2d2)](#systemanforderungen)
 [![Lizenz](https://img.shields.io/badge/license-AGPL--3.0--or--later-9d69e3)](#lizenz)
@@ -23,6 +23,7 @@ Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in 
 - [Bedienkonzept](#bedienkonzept)
 - [MIDI und Live-Spiel](#midi-und-live-spiel)
 - [Arpeggiator](#arpeggiator)
+- [Kosmischer Generator](#kosmischer-generator)
 - [Patterns und Ketten](#patterns-und-ketten)
 - [Piano-Rolls](#piano-rolls)
 - [Klaus-Lore](#klaus-lore)
@@ -53,7 +54,7 @@ Das Resultat soll sowohl ein **Live-Instrument** als auch ein **Kompositionssequ
 
 ## Projektstatus
 
-K.L.A.U.S. ist ein funktionierender **v0.5-Prototyp**. MIDI-Ein- und -Ausgabe, Transport, Ketten, Pattern, Szenen, polyphone Steps, Probability, Ratchets, Live-Skips, Arpeggiator und MIDI-Clock sind real implementiert. Das ist keine statische Designstudie.
+K.L.A.U.S. ist ein funktionierender **v0.6-Prototyp**. MIDI-Ein- und -Ausgabe, Transport, Ketten, Pattern, Szenen, polyphone Steps, Probability, Ratchets, Live-Skips, Arpeggiator, MIDI-Clock und der kreative Reihengenerator sind real implementiert. Das ist keine statische Designstudie.
 
 Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetriebssystem für eine Marsmission. Vor einem Konzert sollte mensch das Setup mit dem eigenen MIDI-Interface und den verwendeten Instrumenten testen.
 
@@ -89,6 +90,8 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 - atomisches Autosave mit Wiederherstellung
 - MIDI-Panic auf allen 16 Kanälen
 - touchfreundliche Oberfläche für Convertibles wie das HP Elite x2 G4
+- kreativer Reihengenerator mit Tonart, Rollenprofilen, reproduzierbaren Seeds und Vorschau
+- Varianten und anteilige Mutation mit Sperren für Noten, Rhythmus und Ausdruck
 
 ### Bewusst noch nicht fertig
 
@@ -103,7 +106,7 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 
 Die aktuelle Windows-Version befindet sich unter [Releases](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases).
 
-1. `KLAUS-Sequencer-58-v0.5.1.exe` herunterladen.
+1. `KLAUS-Sequencer-58-v0.6.0.exe` herunterladen.
 2. Anwendung starten.
 3. MIDI-Ausgang und optional MIDI-Eingang auswählen.
 4. Gerät verbinden.
@@ -191,7 +194,7 @@ Klaus gerät also nicht in Panik. Er verwaltet sie lediglich professionell.
 
 ### MIDI-Clock
 
-v0.5 bietet drei globale Clock-Modi:
+v0.6 bietet drei globale Clock-Modi:
 
 - **Internal:** K.L.A.U.S. verwendet sein eigenes Tempo.
 - **Master:** K.L.A.U.S. sendet 24 PPQN sowie MIDI Start, Continue und Stop.
@@ -215,6 +218,39 @@ Der Live-Arpeggiator unterstützt:
 - 1–8 Arp-Ratchets
 
 Ein laufendes Arpeggio kann in ein neues Kettenpattern gerendert und anschließend detailliert im Piano-Roll weiterbearbeitet werden. Damit ist der Arpeggiator nicht nur ein Effekt, sondern auch ein Kompositionswerkzeug.
+
+## Kosmischer Generator
+
+Der kreative Generator erzeugt für die aktuell gewählte Reihe ein neues Motiv. Er orientiert sich an musikalischen Prinzipien klassischer Berlin-School-Sequenzen – wiederkehrende Motive, schrittweise Bewegung, pulsierende Bässe, wandernde Längen und kontrollierte Abweichung – ohne bestehende Kompositionen zu kopieren.
+
+### Tonales Gerüst
+
+- zwölf frei wählbare Tonzentren
+- Major, Natural Minor, Harmonic Minor, Dorian, Phrygian, Lydian und Mixolydian
+- Major- und Minor-Pentatonik
+- Ganztonleiter und Chromatik
+- eigener MIDI-Tonumfang pro Melodiereihe
+
+### Rollen statt Einheitszufall
+
+Melodiereihen können als **Bass-Puls**, **Ostinato**, **Arpeggio**, **Akkord-Puls**, **Gegenmelodie** oder **melodischer Satellit** arbeiten. Die beiden Drum-Reihen besitzen eigene Profile für **Drum-Puls** und **Percussion-Satellit**. Rollen beeinflussen Rhythmus, Tonbewegung, Polyphonie, Gate, Velocity, Probability und Ratchets.
+
+Die Regler trennen musikalische Eigenschaften bewusst voneinander:
+
+- **Motivlänge:** Zahl der Noten im wiederkehrenden Kern
+- **effektive Länge:** aktive Zykluslänge; der Rest wird als Skip gespeichert
+- **Dichte:** Anteil klingender Steps
+- **Ordnung:** Stabilität der Bewegungsrichtung
+- **Bewegung:** Größe melodischer Schritte
+- **Hitze:** Wahrscheinlichkeit und Stärke von Ratchets
+- **Drift:** Abweichungen bei Motivwiederholungen und Probability
+- **Mutation:** Anteil bestehender Steps, der beim Mutieren ersetzt wird
+
+### Reproduzierbar und reversibel
+
+Ein Seed ist kein dekorativer Maschinenraumaufkleber: Gleiche Einstellungen mit gleichem Seed liefern exakt dasselbe Ergebnis. **Variante** erhöht den Seed und erzeugt eine neue Fassung. **Mutieren** ersetzt nur den eingestellten Anteil der vorhandenen Reihe. Noten, Rhythmus und Ausdruck lassen sich getrennt sperren.
+
+Alle Ergebnisse erscheinen zuerst in einer 16-Step-Vorschau. Erst **Übernehmen** verändert die musikalischen Steps der Reihe; **Verwerfen** lässt sie unberührt. Generator-Einstellungen selbst werden als Teil des Projekts gespeichert. Der Generatorplan enthält bereits Profile für alle acht Reihen, damit eine spätere szenenweite Erzeugung ohne Datenmodell-Akrobatik folgen kann. Klaus hat die ganze Band im Notizbuch, dirigiert in v0.6 aber absichtlich erst einmal eine Reihe zuverlässig.
 
 ## Patterns und Ketten
 
@@ -242,7 +278,7 @@ Mehrere Einzelpatterns gehören jeweils zu einer Kette. Eine Szene speichert die
 
 Der Wechsel erfolgt wahlweise sofort oder quantisiert am nächsten Step, Beat oder Takt. Grundlage ist eine gemeinsame 24-PPQN-Transportzeit, sodass auch unabhängig lange Ketten gemeinsam in eine neue Szene wechseln können, ohne ihre musikalische Eigenständigkeit aufzugeben.
 
-Die Performance-Timeline ist in Projektformat 3 bereits vorbereitet. Die tatsächliche Aufnahme von Szenenwechseln, Live-Skips und Transportaktionen folgt in einer späteren Version.
+Die Performance-Timeline ist im Projektformat bereits vorbereitet. Die tatsächliche Aufnahme von Szenenwechseln, Live-Skips und Transportaktionen folgt in einer späteren Version.
 
 ## Piano-Rolls
 
@@ -307,7 +343,7 @@ Die verbindlichen visuellen Referenzen sind [`assets/klaussequencer58-character-
 
 ## Roadmap
 
-| Bereich | v0.5 | Nächste Schritte | Später |
+| Bereich | v0.6 | Nächste Schritte | Später |
 |---|---:|---|---|
 | Standalone Windows | ✅ | Installer/Signierung | weitere Desktop-Plattformen |
 | MIDI In/Out | ✅ | stabilere Geräteprofile | erweiterte Routing-Matrix |
@@ -315,6 +351,7 @@ Die verbindlichen visuellen Referenzen sind [`assets/klaussequencer58-character-
 | Polyphone Steps | ✅ | komfortablere Auswahl | MPE-Prüfung |
 | Probability/Ratchets | ✅ | Modulation | bedingte Trigger |
 | Live-Arpeggiator | ✅ | Presets | komplexere Arp-Transformationen |
+| Kreativer Generator | Reihe ✅ | ganze Szene | szenenübergreifende Dramaturgie |
 | Kettenpatterns | ✅ | Szenenverwaltung ausbauen | Song-/Kompositionsmodus |
 | Szenen | ✅ | Duplizieren/Löschen | Szenen-Timeline |
 | Live-Skips | ✅ | Performance Capture | Automation |
@@ -337,7 +374,7 @@ K.L.A.U.S. trennt musikalische Daten, Timing, MIDI, Persistenz und Oberfläche:
                              │
 ┌────────────────────────────▼─────────────────────────────┐
 │                  Projekt- und Patternmodell              │
-│ Ketten · Steps · Noten · Routes · Arp · Formatversion   │
+│ Ketten · Steps · Noten · Routes · Arp · Generatorplan │
 └───────────────┬──────────────────────────┬───────────────┘
                 │                          │
 ┌───────────────▼──────────────┐  ┌────────▼──────────────┐
@@ -357,6 +394,7 @@ K.L.A.U.S. trennt musikalische Daten, Timing, MIDI, Persistenz und Oberfläche:
 | `src/model.rs` | serialisierbare musikalische Daten, Ketten und Patterns |
 | `src/engine.rs` | Transport, Richtungen, Skip-Logik, Swing und Probability |
 | `src/midi.rs` | Ein-/Ausgänge, Scheduler, Note-On/Off und Panic |
+| `src/generator.rs` | deterministische, tonale und rollenbasierte Motiverzeugung |
 | `src/persistence.rs` | atomisches Autosave und Wiederherstellung |
 | `src/app.rs` | Zustandsführung und egui-Oberfläche |
 | `src/theme.rs` | Farben, Abstände und visuelle Sprache |

@@ -1,11 +1,28 @@
 use klaus_sequencer_58::engine::{next_timed_index, probability_hits};
-use klaus_sequencer_58::model::{Project, Step, StepState};
+use klaus_sequencer_58::model::{GeneratorRole, Project, Step, StepState};
 
 #[test]
 fn demo_project_has_valid_adjacent_same_type_chains() {
     let project = Project::demo();
     assert_eq!(project.lanes.len(), 8);
     assert!(project.validate_chains().is_ok());
+}
+
+#[test]
+fn generation_plan_is_ready_for_all_lanes_and_future_scenes() {
+    let project = Project::demo();
+    assert_eq!(
+        project.generation_plan.lane_configs.len(),
+        project.lanes.len()
+    );
+    assert_eq!(
+        project.generation_plan.lane_configs[6].role,
+        GeneratorRole::DrumPulse
+    );
+    assert_eq!(
+        project.generation_plan.lane_configs[7].role,
+        GeneratorRole::DrumPercussion
+    );
 }
 
 #[test]

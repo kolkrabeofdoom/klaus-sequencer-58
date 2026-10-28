@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const LANE_COUNT: usize = 8;
 pub const STEPS_PER_LANE: usize = 16;
-pub const PROJECT_FORMAT_VERSION: u32 = 3;
+pub const PROJECT_FORMAT_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LaneKind {
@@ -61,6 +61,155 @@ pub enum MidiClockMode {
     Internal,
     Master,
     Follower,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum MusicalScale {
+    Major,
+    NaturalMinor,
+    HarmonicMinor,
+    #[default]
+    Dorian,
+    Phrygian,
+    Lydian,
+    Mixolydian,
+    MajorPentatonic,
+    MinorPentatonic,
+    WholeTone,
+    Chromatic,
+}
+
+impl MusicalScale {
+    pub fn intervals(self) -> &'static [u8] {
+        match self {
+            Self::Major => &[0, 2, 4, 5, 7, 9, 11],
+            Self::NaturalMinor => &[0, 2, 3, 5, 7, 8, 10],
+            Self::HarmonicMinor => &[0, 2, 3, 5, 7, 8, 11],
+            Self::Dorian => &[0, 2, 3, 5, 7, 9, 10],
+            Self::Phrygian => &[0, 1, 3, 5, 7, 8, 10],
+            Self::Lydian => &[0, 2, 4, 6, 7, 9, 11],
+            Self::Mixolydian => &[0, 2, 4, 5, 7, 9, 10],
+            Self::MajorPentatonic => &[0, 2, 4, 7, 9],
+            Self::MinorPentatonic => &[0, 3, 5, 7, 10],
+            Self::WholeTone => &[0, 2, 4, 6, 8, 10],
+            Self::Chromatic => &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        }
+    }
+
+    pub fn contains(self, root: u8, pitch: u8) -> bool {
+        let interval = (12 + i16::from(pitch % 12) - i16::from(root % 12)) % 12;
+        self.intervals().contains(&(interval as u8))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum GeneratorRole {
+    BassPulse,
+    #[default]
+    Ostinato,
+    Arpeggio,
+    ChordPulse,
+    CounterMelody,
+    MelodicSatellite,
+    DrumPulse,
+    DrumPercussion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LaneGeneratorConfig {
+    pub role: GeneratorRole,
+    pub min_pitch: u8,
+    pub max_pitch: u8,
+    pub motif_length: u8,
+    pub effective_length: u8,
+    pub density: u8,
+    pub order: u8,
+    pub movement: u8,
+    pub heat: u8,
+    pub drift: u8,
+    pub mutation: u8,
+    pub lock_notes: bool,
+    pub lock_rhythm: bool,
+    pub lock_expression: bool,
+    pub seed_offset: u64,
+}
+
+impl LaneGeneratorConfig {
+    pub fn for_lane(index: usize, kind: LaneKind) -> Self {
+        if kind == LaneKind::Drums {
+            return Self {
+                role: if index == 6 {
+                    GeneratorRole::DrumPulse
+                } else {
+                    GeneratorRole::DrumPercussion
+                },
+                min_pitch: 36,
+                max_pitch: 43,
+                motif_length: if index == 6 { 4 } else { 7 },
+                effective_length: 16,
+                density: if index == 6 { 48 } else { 38 },
+                order: 76,
+                movement: 28,
+                heat: if index == 6 { 24 } else { 46 },
+                drift: 18,
+                mutation: 20,
+                lock_notes: false,
+                lock_rhythm: false,
+                lock_expression: false,
+                seed_offset: index as u64 * 5_858,
+            };
+        }
+        let (role, min_pitch, max_pitch, motif_length, density) = match index {
+            0 => (GeneratorRole::BassPulse, 36, 55, 5, 78),
+            1 => (GeneratorRole::Ostinato, 40, 64, 7, 72),
+            2 => (GeneratorRole::ChordPulse, 48, 76, 4, 42),
+            3 => (GeneratorRole::CounterMelody, 55, 84, 7, 46),
+            4 => (GeneratorRole::Arpeggio, 48, 84, 7, 76),
+            _ => (GeneratorRole::MelodicSatellite, 60, 91, 5, 32),
+        };
+        Self {
+            role,
+            min_pitch,
+            max_pitch,
+            motif_length,
+            effective_length: 16,
+            density,
+            order: 74,
+            movement: 42,
+            heat: 28,
+            drift: 18,
+            mutation: 20,
+            lock_notes: false,
+            lock_rhythm: false,
+            lock_expression: false,
+            seed_offset: index as u64 * 5_858,
+        }
+    }
+}
+
+impl Default for LaneGeneratorConfig {
+    fn default() -> Self {
+        Self::for_lane(0, LaneKind::Melody)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GenerationPlan {
+    pub root: u8,
+    pub scale: MusicalScale,
+    pub seed: u64,
+    pub lane_configs: Vec<LaneGeneratorConfig>,
+}
+
+impl Default for GenerationPlan {
+    fn default() -> Self {
+        Self {
+            root: 2,
+            scale: MusicalScale::Dorian,
+            seed: 58,
+            lane_configs: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -280,6 +429,8 @@ pub struct Project {
     pub midi_clock_mode: MidiClockMode,
     #[serde(default)]
     pub performance_timeline: Vec<PerformanceEvent>,
+    #[serde(default)]
+    pub generation_plan: GenerationPlan,
 }
 
 impl Project {
@@ -439,9 +590,11 @@ impl Project {
             scene_launch_quantization: SceneLaunchQuantization::default(),
             midi_clock_mode: MidiClockMode::default(),
             performance_timeline: Vec::new(),
+            generation_plan: GenerationPlan::default(),
         };
         project.ensure_patterns();
         project.ensure_scenes();
+        project.ensure_generation_plan();
         project
     }
 
@@ -554,6 +707,21 @@ impl Project {
             }
         }
         self.active_pattern_by_chain.truncate(self.chains.len());
+    }
+
+    pub fn ensure_generation_plan(&mut self) {
+        while self.generation_plan.lane_configs.len() < self.lanes.len() {
+            let index = self.generation_plan.lane_configs.len();
+            let kind = self
+                .lanes
+                .get(index)
+                .map_or(LaneKind::Melody, |lane| lane.kind);
+            self.generation_plan
+                .lane_configs
+                .push(LaneGeneratorConfig::for_lane(index, kind));
+        }
+        self.generation_plan.lane_configs.truncate(self.lanes.len());
+        self.generation_plan.root %= 12;
     }
 
     pub fn ensure_scenes(&mut self) {
