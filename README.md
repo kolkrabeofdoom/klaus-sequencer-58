@@ -1,6 +1,6 @@
 # K.L.A.U.S. Sequencer 58
 
-![K.L.A.U.S. Sequencer 58](KLAUS-Promobild-v0.7.png)
+![K.L.A.U.S. Sequencer 58](KLAUS-Promobild-v0.8.png)
 
 **Ketten-Looper für Arpeggien und unabhängige Steps**  
 Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in Rust, inspiriert von Berlin School, Modularsystemen, polyrhythmischen Verschiebungen und der begründeten Überzeugung, dass ein Step mehr als eine Note tragen darf.
@@ -8,7 +8,7 @@ Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in 
 > „Warum nur einen? Alle brauchen zwei 303s.“  
 > — Klaus, vermutlich während einer völlig sachlichen Budgetbesprechung
 
-[![Version](https://img.shields.io/badge/version-0.7.0-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
+[![Version](https://img.shields.io/badge/version-0.8.0-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.89%2B-cyan)](https://www.rust-lang.org/)
 [![Plattform](https://img.shields.io/badge/platform-Windows-57d2d2)](#systemanforderungen)
 [![Lizenz](https://img.shields.io/badge/license-AGPL--3.0--or--later-9d69e3)](#lizenz)
@@ -55,7 +55,7 @@ Das Resultat soll sowohl ein **Live-Instrument** als auch ein **Kompositionssequ
 
 ## Projektstatus
 
-K.L.A.U.S. ist ein funktionierender **v0.7-Prototyp**. MIDI-Ein- und -Ausgabe, Transport, Ketten, Pattern, Szenen, polyphone Steps, Probability, Ratchets, Live-Skips, Arpeggiator, MIDI-Clock, kreativer Reihengenerator und Performance Capture sind real implementiert. Das ist keine statische Designstudie.
+K.L.A.U.S. ist ein funktionierender **v0.8-Prototyp**. MIDI-Ein- und -Ausgabe, Transport, Ketten, Pattern, Szenen, polyphone Steps, Probability, Ratchets, Live-Skips, Arpeggiator, MIDI-Clock, kreativer Reihengenerator und Performance Capture mit mehreren Takes sind real implementiert. Das ist keine statische Designstudie.
 
 Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetriebssystem für eine Marsmission. Vor einem Konzert sollte mensch das Setup mit dem eigenen MIDI-Interface und den verwendeten Instrumenten testen.
 
@@ -96,11 +96,14 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 - Varianten und anteilige Mutation mit Sperren für Noten, Rhythmus und Ausdruck
 - Performance Capture mit persistenter 24-PPQN-Ereignistimeline
 - Take-Playback für Szenen, Pattern und Live-Skips
+- mehrere benannte Takes mit Duplizieren, Umbenennen und sicherem Löschen
+- grafisch und per Touch verschiebbare Timeline-Ereignisse
+- gespeicherte Wiederholungsblöcke mit zwei bis sechzehn Durchläufen
 
 ### Bewusst noch nicht fertig
 
 - vollständiger Kompositions-/Songmodus
-- Performance Capture
+- durchgehendes Arrangement über mehrere Takes und Szenen
 - MIDI-Dateiexport
 - Vollbild-Piano-Roll
 - VST3-, CLAP- und LV2-Adapter
@@ -110,7 +113,7 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 
 Die aktuelle Windows-Version befindet sich unter [Releases](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases).
 
-1. `KLAUS-Sequencer-58-v0.7.0.exe` herunterladen.
+1. `KLAUS-Sequencer-58-v0.8.0.exe` herunterladen.
 2. Anwendung starten.
 3. MIDI-Ausgang und optional MIDI-Eingang auswählen.
 4. Gerät verbinden.
@@ -278,7 +281,9 @@ Das Performance-Fenster verbindet die unmittelbare Live-Arbeit mit dem späteren
 
 Die Ereignisliste zeigt Takt, Beat, Tick und absoluten Puls. Einzelne Ereignisse lassen sich entfernen; die gesamte Timeline kann bewusst geleert werden. **TAKE ABSPIELEN** setzt Transport und temporäre Live-Skips zurück und rekonstruiert die Performance über stabile IDs. Dadurch bleiben Szenen- und Patternreferenzen auch dann verständlich, wenn Listenpositionen sich verändern.
 
-Die Timeline wird in der Projektdatei und im Autosave gespeichert. v0.7 bildet bewusst einen linearen Take ab. Pausen und Fortsetzungen innerhalb desselben Takes, grafisches Verschieben von Ereignissen, Wiederholungsblöcke und mehrere Takes folgen mit dem erweiterten Songmodus. Ein erster Recorder soll schließlich aufnehmen und nicht sofort eine kleine, schlecht dokumentierte Raumfahrtbehörde werden.
+Die Timeline wird in der Projektdatei und im Autosave gespeichert. Seit v0.8 darf ein Projekt mehrere benannte Takes enthalten. Neue Takes starten leer oder entstehen als vollständige Kopie; sie lassen sich auswählen, umbenennen und – solange mindestens einer übrig bleibt – löschen.
+
+Oberhalb der Ereignisliste liegt eine grafische 24-PPQN-Spur. Ihre Marker lassen sich per Maus oder Touch verschieben. Ein optionaler Wiederholungsblock definiert Start, Ende und zwei bis sechzehn Durchläufe. Beim erneuten Durchlauf setzt K.L.A.U.S. die temporären Performance-Zustände reproduzierbar zurück und spielt den markierten Abschnitt erneut. Der Songmodus ist damit noch keine kleine Raumfahrtbehörde, besitzt aber erstmals einen brauchbaren Fahrplan und mehrere Klemmbretter.
 
 ## Patterns und Ketten
 
@@ -375,7 +380,7 @@ Die verbindlichen visuellen Referenzen sind [`assets/klaussequencer58-character-
 
 ## Roadmap
 
-| Bereich | v0.7 | Nächste Schritte | Später |
+| Bereich | v0.8 | Nächste Schritte | Später |
 |---|---:|---|---|
 | Standalone Windows | ✅ | Installer/Signierung | weitere Desktop-Plattformen |
 | MIDI In/Out | ✅ | stabilere Geräteprofile | erweiterte Routing-Matrix |
@@ -388,7 +393,7 @@ Die verbindlichen visuellen Referenzen sind [`assets/klaussequencer58-character-
 | Kettenpatterns | ✅ | Szenenverwaltung ausbauen | Song-/Kompositionsmodus |
 | Szenen | ✅ | Duplizieren/Löschen | Szenen-Timeline |
 | Live-Skips | ✅ | grafische Automation | Modulationsspuren |
-| Performance Capture | linearer Take ✅ | Bearbeiten/mehrere Takes | vollständiger Songmodus |
+| Performance Capture | mehrere Takes/Loopblöcke ✅ | Kopieren/Einfügen, Zoom | vollständiger Songmodus |
 | Projektdateien/Undo | ✅ | Projektbrowser | Versionierung |
 | MIDI-Export | – | geplant | – |
 | Plug-ins | vorbereitet | VST3 | CLAP und LV2 |

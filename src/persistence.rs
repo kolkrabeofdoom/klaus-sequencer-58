@@ -23,6 +23,7 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
     project.ensure_patterns();
     project.ensure_scenes();
     project.ensure_generation_plan();
+    project.ensure_performance_takes();
     project.format_version = PROJECT_FORMAT_VERSION;
     project.validate_chains()?;
     Ok(project)
@@ -114,6 +115,8 @@ mod tests {
         object.remove("scene_launch_quantization");
         object.remove("midi_clock_mode");
         object.remove("performance_timeline");
+        object.remove("performance_takes");
+        object.remove("active_performance_take");
         object.remove("generation_plan");
         for route in object
             .get_mut("chains")
@@ -155,6 +158,39 @@ mod tests {
                 .iter()
                 .all(|chain| !chain.route.sound.enabled)
         );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn version_five_timeline_becomes_first_performance_take() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("klaus58-v5-test-{unique}.json"));
+        let mut project = Project::demo();
+        project
+            .performance_timeline
+            .push(crate::model::PerformanceEvent {
+                pulse: 96,
+                action: crate::model::PerformanceAction::TransportStop,
+            });
+        let mut value = serde_json::to_value(project).expect("serialize project");
+        let object = value.as_object_mut().expect("project object");
+        object.insert("format_version".to_owned(), 5.into());
+        object.remove("performance_takes");
+        object.remove("active_performance_take");
+        fs::write(
+            &path,
+            serde_json::to_vec_pretty(&value).expect("serialize legacy project"),
+        )
+        .expect("write legacy project");
+
+        let restored = load_project(&path).expect("load v5 project");
+        assert_eq!(restored.performance_takes.len(), 1);
+        assert_eq!(restored.performance_takes[0].name, "TAKE 01");
+        assert_eq!(restored.performance_takes[0].events.len(), 1);
+        assert_eq!(restored.performance_takes[0].events[0].pulse, 96);
         let _ = fs::remove_file(path);
     }
 }

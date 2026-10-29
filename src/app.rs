@@ -14,7 +14,7 @@ use crate::midi::{
 };
 use crate::model::{
     ArpMode, Direction, GeneratorRole, LaneGeneratorConfig, LaneKind, MidiClockMode, MusicalScale,
-    NoteEvent, PerformanceAction, PerformanceEvent, Project, STEPS_PER_LANE,
+    NoteEvent, PerformanceAction, PerformanceEvent, PerformanceLoop, Project, STEPS_PER_LANE,
     SceneLaunchQuantization, Step, StepDivision, StepState,
 };
 use crate::persistence::{default_autosave_path, load_project, save_project_atomic};
@@ -106,6 +106,8 @@ pub struct KlausApp {
     performance_capture_active: bool,
     performance_playback_active: bool,
     performance_playback_cursor: usize,
+    performance_loop_pass: u8,
+    selected_performance_event: Option<usize>,
     performance_status: String,
 }
 
@@ -205,6 +207,16 @@ impl KlausApp {
                     action: PerformanceAction::TransportStop,
                 },
             ];
+            project.performance_takes[0].name = "BERLIN NACHT".to_owned();
+            project.performance_takes[0].loop_block = Some(PerformanceLoop {
+                start_pulse: 48,
+                end_pulse: 192,
+                passes: 4,
+            });
+            project.sync_active_performance_take();
+            project.add_performance_take(true);
+            project.performance_takes[1].name = "BERLIN NACHT · VARIANTE".to_owned();
+            project.select_performance_take(0);
         }
 
         let selected_output = project
@@ -285,6 +297,8 @@ impl KlausApp {
             performance_capture_active: false,
             performance_playback_active: false,
             performance_playback_cursor: 0,
+            performance_loop_pass: 1,
+            selected_performance_event: None,
             performance_status: "PERFORMANCE-TAKE BEREIT".to_owned(),
         }
     }
@@ -854,16 +868,40 @@ impl KlausApp {
         let playback_active = self.performance_playback_active;
         let current_pulse = self.transport_pulses;
         let last_pulse = events.last().map_or(0, |event| event.pulse);
+        let takes: Vec<(usize, String)> = self
+            .project
+            .performance_takes
+            .iter()
+            .enumerate()
+            .map(|(index, take)| (index, take.name.clone()))
+            .collect();
+        let active_take = self.project.active_performance_take;
+        let mut take_name = takes
+            .get(active_take)
+            .map_or_else(|| "TAKE".to_owned(), |(_, name)| name.clone());
+        let active_loop = self.project.active_performance_loop().cloned();
+        let mut loop_enabled = active_loop.is_some();
+        let mut loop_start = active_loop.as_ref().map_or(0, |block| block.start_pulse);
+        let mut loop_end = active_loop
+            .as_ref()
+            .map_or(last_pulse.max(96), |block| block.end_pulse);
+        let mut loop_passes = active_loop.as_ref().map_or(2, |block| block.passes);
         let mut toggle_capture = false;
         let mut start_playback = false;
         let mut stop_playback = false;
         let mut clear_timeline = false;
         let mut remove_event = None;
+        let mut select_take = None;
+        let mut add_take = false;
+        let mut duplicate_take = false;
+        let mut remove_take = false;
+        let mut move_event = None;
+        let mut selected_event = self.selected_performance_event;
 
         egui::Window::new("● PERFORMANCE CAPTURE")
             .open(&mut open)
-            .default_width(610.0)
-            .default_height(470.0)
+            .default_width(760.0)
+            .default_height(560.0)
             .resizable(true)
             .frame(egui::Frame::window(&ctx.style()).fill(Color32::from_rgb(10, 15, 18)))
             .show(ctx, |ui| {
@@ -884,6 +922,47 @@ impl KlausApp {
                     .color(theme::MUTED),
                 );
                 ui.separator();
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("TAKE").color(theme::CYAN).strong());
+                    egui::ComboBox::from_id_salt("performance_take_select")
+                        .selected_text(&take_name)
+                        .show_ui(ui, |ui| {
+                            for (index, name) in &takes {
+                                if ui.selectable_label(*index == active_take, name).clicked() {
+                                    select_take = Some(*index);
+                                }
+                            }
+                        });
+                    if ui
+                        .add(egui::Button::new("+ NEU").min_size(egui::vec2(70.0, 30.0)))
+                        .clicked()
+                    {
+                        add_take = true;
+                    }
+                    if ui
+                        .add(
+                            egui::Button::new("⧉ DUPLIZIEREN")
+                                .min_size(egui::vec2(112.0, 30.0)),
+                        )
+                        .clicked()
+                    {
+                        duplicate_take = true;
+                    }
+                    if ui
+                        .add_enabled(
+                            takes.len() > 1,
+                            egui::Button::new("− LÖSCHEN").min_size(egui::vec2(88.0, 30.0)),
+                        )
+                        .clicked()
+                    {
+                        remove_take = true;
+                    }
+                    ui.add(
+                        egui::TextEdit::singleline(&mut take_name)
+                            .desired_width(170.0)
+                            .hint_text("Take-Name"),
+                    );
+                });
                 ui.horizontal_wrapped(|ui| {
                     if ui
                         .add(
@@ -982,6 +1061,109 @@ impl KlausApp {
                 ui.label(RichText::new(status).color(theme::ACID).size(9.0));
                 ui.separator();
 
+                let timeline_max = last_pulse.max(loop_end).max(96);
+                let (timeline_rect, _) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), 74.0),
+                    Sense::hover(),
+                );
+                ui.painter().rect_filled(
+                    timeline_rect,
+                    5.0,
+                    Color32::from_rgb(13, 21, 25),
+                );
+                let pulse_x = |pulse: u64| {
+                    timeline_rect.left()
+                        + timeline_rect.width() * pulse.min(timeline_max) as f32
+                            / timeline_max as f32
+                };
+                for pulse in (0..=timeline_max).step_by(24) {
+                    let x = pulse_x(pulse);
+                    let is_bar = pulse % 96 == 0;
+                    ui.painter().line_segment(
+                        [egui::pos2(x, timeline_rect.top()), egui::pos2(x, timeline_rect.bottom())],
+                        Stroke::new(
+                            if is_bar { 1.5 } else { 0.5 },
+                            if is_bar { theme::ORANGE } else { Color32::from_rgb(50, 65, 70) },
+                        ),
+                    );
+                    if is_bar {
+                        ui.painter().text(
+                            egui::pos2(x + 4.0, timeline_rect.top() + 4.0),
+                            egui::Align2::LEFT_TOP,
+                            format!("{}", pulse / 96 + 1),
+                            egui::FontId::monospace(9.0),
+                            theme::MUTED,
+                        );
+                    }
+                }
+                if loop_enabled && loop_end > loop_start {
+                    let loop_rect = egui::Rect::from_min_max(
+                        egui::pos2(pulse_x(loop_start), timeline_rect.top() + 18.0),
+                        egui::pos2(pulse_x(loop_end), timeline_rect.bottom()),
+                    );
+                    ui.painter().rect_filled(
+                        loop_rect,
+                        3.0,
+                        Color32::from_rgba_unmultiplied(157, 105, 227, 38),
+                    );
+                }
+                for (index, event) in events.iter().enumerate() {
+                    let x = pulse_x(event.pulse);
+                    let y = timeline_rect.center().y + (index % 3) as f32 * 11.0 - 11.0;
+                    let marker = egui::Rect::from_center_size(
+                        egui::pos2(x, y),
+                        egui::vec2(30.0, 40.0),
+                    );
+                    let response = ui.interact(
+                        marker,
+                        ui.id().with(("performance_event", index)),
+                        Sense::click_and_drag(),
+                    );
+                    if !capture_active && !playback_active && response.clicked() {
+                        selected_event = Some(index);
+                    }
+                    if !capture_active && !playback_active && response.dragged() {
+                        let relative = ((response.interact_pointer_pos().map_or(x, |pos| pos.x)
+                            - timeline_rect.left())
+                            / timeline_rect.width())
+                            .clamp(0.0, 1.0);
+                        move_event = Some((index, (relative * timeline_max as f32).round() as u64));
+                        selected_event = Some(index);
+                    }
+                    ui.painter().circle_filled(
+                        egui::pos2(x, y),
+                        if selected_event == Some(index) { 7.0 } else { 5.0 },
+                        if selected_event == Some(index) { theme::ACID } else { theme::CYAN },
+                    );
+                }
+                ui.horizontal_wrapped(|ui| {
+                    ui.checkbox(
+                        &mut loop_enabled,
+                        RichText::new("WIEDERHOLUNGSBLOCK").color(Color32::WHITE),
+                    );
+                    ui.label(RichText::new("START").color(theme::MUTED));
+                    ui.add_sized(
+                        [62.0, 30.0],
+                        egui::DragValue::new(&mut loop_start).range(0..=999_999),
+                    );
+                    ui.label(RichText::new("ENDE").color(theme::MUTED));
+                    ui.add_sized(
+                        [62.0, 30.0],
+                        egui::DragValue::new(&mut loop_end).range(1..=999_999),
+                    );
+                    ui.label(RichText::new("DURCHLÄUFE").color(theme::MUTED));
+                    ui.add_sized(
+                        [52.0, 30.0],
+                        egui::DragValue::new(&mut loop_passes).range(2..=16),
+                    );
+                });
+                ui.label(
+                    RichText::new("MARKER ANTIPPEN UND ZIEHEN · RASTER: 24 PPQN")
+                        .color(theme::MUTED)
+                        .size(8.0),
+                );
+                ui.separator();
+
                 if events.is_empty() {
                     ui.add_space(30.0);
                     ui.vertical_centered(|ui| {
@@ -1020,15 +1202,19 @@ impl KlausApp {
                                                 .monospace(),
                                         ),
                                     );
-                                    ui.label(performance_action_label(
-                                        &event.action,
-                                        &self.project,
-                                    ));
+                                    ui.label(
+                                        RichText::new(performance_action_label(
+                                            &event.action,
+                                            &self.project,
+                                        ))
+                                        .color(Color32::WHITE),
+                                    );
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                         if ui
                                             .add_enabled(
                                                 !capture_active && !playback_active,
-                                                egui::Button::new("×"),
+                                                egui::Button::new("×")
+                                                    .min_size(egui::vec2(32.0, 30.0)),
                                             )
                                             .on_hover_text("Ereignis entfernen")
                                             .clicked()
@@ -1044,6 +1230,63 @@ impl KlausApp {
             });
 
         self.performance_window_open = open;
+        self.selected_performance_event = selected_event;
+        let take_management_action =
+            select_take.is_some() || add_take || duplicate_take || remove_take;
+        if !capture_active && !playback_active {
+            if let Some(index) = select_take {
+                if self.project.select_performance_take(index) {
+                    self.transport_pulses = 0;
+                    self.performance_playback_cursor = 0;
+                    self.selected_performance_event = None;
+                    self.performance_status =
+                        format!("{} GELADEN", self.project.performance_takes[index].name);
+                }
+            } else if add_take {
+                self.project.add_performance_take(false);
+                self.transport_pulses = 0;
+                self.selected_performance_event = None;
+                self.performance_status = "NEUER TAKE BEREIT".to_owned();
+            } else if duplicate_take {
+                self.project.add_performance_take(true);
+                self.transport_pulses = 0;
+                self.selected_performance_event = None;
+                self.performance_status = "TAKE DUPLIZIERT".to_owned();
+            } else if remove_take && self.project.remove_active_performance_take() {
+                self.transport_pulses = 0;
+                self.selected_performance_event = None;
+                self.performance_status = "TAKE GELÖSCHT".to_owned();
+            }
+        }
+        if !take_management_action
+            && !capture_active
+            && !playback_active
+            && let Some(take) = self
+                .project
+                .performance_takes
+                .get_mut(self.project.active_performance_take)
+        {
+            let trimmed = take_name.trim();
+            if !trimmed.is_empty() {
+                take.name = trimmed.chars().take(40).collect();
+            }
+            take.loop_block = loop_enabled.then(|| PerformanceLoop {
+                start_pulse: loop_start.min(loop_end.saturating_sub(1)),
+                end_pulse: loop_end.max(loop_start + 1),
+                passes: loop_passes.clamp(2, 16),
+            });
+        }
+        if !take_management_action
+            && let Some((index, pulse)) = move_event
+            && let Some(event) = self.project.performance_timeline.get_mut(index)
+        {
+            event.pulse = pulse;
+            self.project
+                .performance_timeline
+                .sort_by_key(|event| event.pulse);
+            self.project.sync_active_performance_take();
+            self.performance_status = format!("EREIGNIS VERSCHOBEN · PULS {pulse}");
+        }
         if toggle_capture {
             if self.performance_capture_active {
                 self.performance_capture_active = false;
@@ -1061,6 +1304,7 @@ impl KlausApp {
                     let continuation_pulse = last_event.pulse;
                     if matches!(&last_event.action, PerformanceAction::TransportStop) {
                         self.project.performance_timeline.pop();
+                        self.project.sync_active_performance_take();
                     }
                     self.transport_pulses = continuation_pulse;
                     self.clock_accumulator = 0.0;
@@ -1081,6 +1325,7 @@ impl KlausApp {
         }
         if clear_timeline {
             self.project.performance_timeline.clear();
+            self.project.sync_active_performance_take();
             self.performance_playback_cursor = 0;
             self.performance_status = "TIMELINE GELEERT".to_owned();
         }
@@ -1088,6 +1333,7 @@ impl KlausApp {
             && index < self.project.performance_timeline.len()
         {
             self.project.performance_timeline.remove(index);
+            self.project.sync_active_performance_take();
             self.performance_playback_cursor = 0;
             self.performance_status = "EREIGNIS ENTFERNT".to_owned();
         }
@@ -1355,6 +1601,7 @@ impl KlausApp {
         }
         self.last_autosave = Instant::now();
         self.project.sync_all_active_patterns();
+        self.project.sync_active_performance_take();
         let Ok(json) = self.project.to_json() else {
             self.save_status = "AUTOSAVE-FEHLER · SERIALISIERUNG".to_owned();
             return;
@@ -1373,6 +1620,7 @@ impl KlausApp {
 
     fn capture_history_change(&mut self) {
         self.project.sync_all_active_patterns();
+        self.project.sync_active_performance_take();
         if self.project.midi_clock_mode == MidiClockMode::Follower {
             self.history_project.bpm = self.project.bpm;
         }
@@ -1414,6 +1662,7 @@ impl KlausApp {
 
     fn save_project_to(&mut self, path: PathBuf) {
         self.project.sync_all_active_patterns();
+        self.project.sync_active_performance_take();
         match save_project_atomic(&self.project, &path) {
             Ok(()) => {
                 self.project_path = Some(path);
@@ -1495,6 +1744,7 @@ impl KlausApp {
         self.project
             .performance_timeline
             .sort_by_key(|event| event.pulse);
+        self.project.sync_active_performance_take();
         self.performance_status = format!(
             "AUFNAHME · {} EVENTS · PULS {}",
             self.project.performance_timeline.len(),
@@ -1539,6 +1789,7 @@ impl KlausApp {
         self.clock_accumulator = 0.0;
         self.external_clock_pulses = 0;
         self.performance_playback_cursor = 0;
+        self.performance_loop_pass = 1;
         self.performance_playback_active = true;
         self.apply_performance_events_through(0);
         if self.performance_playback_active {
@@ -1550,6 +1801,7 @@ impl KlausApp {
     fn stop_performance_playback(&mut self) {
         self.performance_playback_active = false;
         self.performance_playback_cursor = 0;
+        self.performance_loop_pass = 1;
         self.engine.stop();
         self.midi.panic();
         self.transport_pulses = 0;
@@ -1562,6 +1814,10 @@ impl KlausApp {
         if !self.performance_playback_active {
             return;
         }
+        let loop_block = self.project.active_performance_loop().cloned();
+        let can_repeat = loop_block
+            .as_ref()
+            .is_some_and(|block| self.performance_loop_pass < block.passes);
         let mut stop_at_end = false;
         while let Some(event) = self
             .project
@@ -1614,8 +1870,31 @@ impl KlausApp {
                     }
                 }
                 PerformanceAction::TransportStart => {}
-                PerformanceAction::TransportStop => stop_at_end = true,
+                PerformanceAction::TransportStop => {
+                    stop_at_end = !can_repeat
+                        || loop_block
+                            .as_ref()
+                            .is_none_or(|block| event.pulse < block.end_pulse);
+                }
             }
+        }
+        if let Some(block) = loop_block
+            && current_pulse >= block.end_pulse
+            && self.performance_loop_pass < block.passes
+        {
+            self.performance_loop_pass += 1;
+            self.engine.stop();
+            self.midi.panic();
+            self.engine.start();
+            self.live_skips.clear();
+            self.transport_pulses = block.start_pulse;
+            self.performance_playback_cursor = 0;
+            self.apply_performance_events_through(block.start_pulse);
+            self.performance_status = format!(
+                "TAKE-SCHLEIFE · DURCHLAUF {} / {}",
+                self.performance_loop_pass, block.passes
+            );
+            return;
         }
         if stop_at_end {
             self.performance_playback_active = false;
@@ -2998,7 +3277,7 @@ impl KlausApp {
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new("v0.7.0 · PROTOTYPE").color(theme::MUTED));
+                        ui.label(RichText::new("v0.8.0 · PROTOTYPE").color(theme::MUTED));
                     });
                 });
             });
@@ -3089,6 +3368,7 @@ impl eframe::App for KlausApp {
 impl Drop for KlausApp {
     fn drop(&mut self) {
         self.project.sync_all_active_patterns();
+        self.project.sync_active_performance_take();
         let _ = save_project_atomic(&self.project, &self.autosave_path);
     }
 }

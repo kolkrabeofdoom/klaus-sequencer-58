@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const LANE_COUNT: usize = 8;
 pub const STEPS_PER_LANE: usize = 16;
-pub const PROJECT_FORMAT_VERSION: u32 = 5;
+pub const PROJECT_FORMAT_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LaneKind {
@@ -432,6 +432,22 @@ pub struct PerformanceEvent {
     pub action: PerformanceAction,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PerformanceLoop {
+    pub start_pulse: u64,
+    pub end_pulse: u64,
+    pub passes: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PerformanceTake {
+    pub id: usize,
+    pub name: String,
+    pub events: Vec<PerformanceEvent>,
+    #[serde(default)]
+    pub loop_block: Option<PerformanceLoop>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     pub format_version: u32,
@@ -454,6 +470,10 @@ pub struct Project {
     pub midi_clock_mode: MidiClockMode,
     #[serde(default)]
     pub performance_timeline: Vec<PerformanceEvent>,
+    #[serde(default)]
+    pub performance_takes: Vec<PerformanceTake>,
+    #[serde(default)]
+    pub active_performance_take: usize,
     #[serde(default)]
     pub generation_plan: GenerationPlan,
 }
@@ -559,12 +579,95 @@ impl Project {
             scene_launch_quantization: SceneLaunchQuantization::default(),
             midi_clock_mode: MidiClockMode::default(),
             performance_timeline: Vec::new(),
+            performance_takes: Vec::new(),
+            active_performance_take: 0,
             generation_plan: GenerationPlan::default(),
         };
         project.ensure_patterns();
         project.ensure_scenes();
         project.ensure_generation_plan();
+        project.ensure_performance_takes();
         project
+    }
+
+    pub fn ensure_performance_takes(&mut self) {
+        if self.performance_takes.is_empty() {
+            self.performance_takes.push(PerformanceTake {
+                id: 0,
+                name: "TAKE 01".to_owned(),
+                events: self.performance_timeline.clone(),
+                loop_block: None,
+            });
+        }
+        self.active_performance_take = self
+            .active_performance_take
+            .min(self.performance_takes.len().saturating_sub(1));
+        self.performance_timeline = self.performance_takes[self.active_performance_take]
+            .events
+            .clone();
+    }
+
+    pub fn sync_active_performance_take(&mut self) {
+        if let Some(take) = self.performance_takes.get_mut(self.active_performance_take) {
+            take.events = self.performance_timeline.clone();
+        }
+    }
+
+    pub fn select_performance_take(&mut self, index: usize) -> bool {
+        if index >= self.performance_takes.len() {
+            return false;
+        }
+        self.sync_active_performance_take();
+        self.active_performance_take = index;
+        self.performance_timeline = self.performance_takes[index].events.clone();
+        true
+    }
+
+    pub fn add_performance_take(&mut self, duplicate_current: bool) -> usize {
+        self.sync_active_performance_take();
+        let id = self
+            .performance_takes
+            .iter()
+            .map(|take| take.id)
+            .max()
+            .map_or(0, |id| id + 1);
+        let (events, loop_block) = if duplicate_current {
+            let current = &self.performance_takes[self.active_performance_take];
+            (current.events.clone(), current.loop_block.clone())
+        } else {
+            (Vec::new(), None)
+        };
+        self.performance_takes.push(PerformanceTake {
+            id,
+            name: format!("TAKE {:02}", self.performance_takes.len() + 1),
+            events,
+            loop_block,
+        });
+        self.active_performance_take = self.performance_takes.len() - 1;
+        self.performance_timeline = self.performance_takes[self.active_performance_take]
+            .events
+            .clone();
+        self.active_performance_take
+    }
+
+    pub fn remove_active_performance_take(&mut self) -> bool {
+        if self.performance_takes.len() <= 1 {
+            return false;
+        }
+        self.performance_takes.remove(self.active_performance_take);
+        self.active_performance_take = self
+            .active_performance_take
+            .min(self.performance_takes.len() - 1);
+        self.performance_timeline = self.performance_takes[self.active_performance_take]
+            .events
+            .clone();
+        true
+    }
+
+    pub fn active_performance_loop(&self) -> Option<&PerformanceLoop> {
+        self.performance_takes
+            .get(self.active_performance_take)
+            .and_then(|take| take.loop_block.as_ref())
     }
 
     pub fn validate_chains(&self) -> Result<(), String> {
@@ -754,6 +857,15 @@ impl Project {
                     if affected_old.contains(chain_id)
             )
         });
+        for take in &mut self.performance_takes {
+            take.events.retain(|event| {
+                !matches!(
+                    &event.action,
+                    PerformanceAction::PatternChange { chain_id, .. }
+                        if affected_old.contains(chain_id)
+                )
+            });
+        }
         self.patterns
             .retain(|pattern| !affected_old.contains(&pattern.chain_id));
         let mut next_pattern_id = self

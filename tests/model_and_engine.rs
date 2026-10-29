@@ -1,6 +1,6 @@
 use klaus_sequencer_58::engine::{next_timed_index, probability_hits};
 use klaus_sequencer_58::model::{
-    GeneratorRole, PerformanceAction, PerformanceEvent, Project, Step, StepState,
+    GeneratorRole, PerformanceAction, PerformanceEvent, PerformanceLoop, Project, Step, StepState,
 };
 
 #[test]
@@ -95,9 +95,42 @@ fn project_round_trip_preserves_musical_state() {
             action: PerformanceAction::TransportStop,
         },
     ];
+    project.performance_takes[0].loop_block = Some(PerformanceLoop {
+        start_pulse: 0,
+        end_pulse: 192,
+        passes: 3,
+    });
+    project.sync_active_performance_take();
+    project.add_performance_take(true);
+    project.performance_takes[1].name = "NACHTFAHRT VARIANTE".to_owned();
     let json = project.to_json().expect("serialize project");
     let restored = Project::from_json(&json).expect("deserialize project");
     assert_eq!(restored, project);
+}
+
+#[test]
+fn performance_takes_can_be_created_switched_and_removed() {
+    let mut project = Project::demo();
+    project.performance_timeline.push(PerformanceEvent {
+        pulse: 24,
+        action: PerformanceAction::TransportStart,
+    });
+    project.sync_active_performance_take();
+
+    let second = project.add_performance_take(false);
+    assert_eq!(second, 1);
+    assert!(project.performance_timeline.is_empty());
+
+    project.performance_timeline.push(PerformanceEvent {
+        pulse: 96,
+        action: PerformanceAction::TransportStop,
+    });
+    project.sync_active_performance_take();
+    assert!(project.select_performance_take(0));
+    assert_eq!(project.performance_timeline[0].pulse, 24);
+    assert!(project.remove_active_performance_take());
+    assert_eq!(project.performance_takes.len(), 1);
+    assert_eq!(project.performance_timeline[0].pulse, 96);
 }
 
 #[test]

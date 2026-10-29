@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0 – Klaus schneidet die Zeit in handliche Scheiben
+
+- mehrere benannte Performance-Takes pro Projekt
+- neue Takes können leer angelegt oder vollständig dupliziert werden
+- Take-Auswahl, Umbenennung und Löschen direkt im Performance-Fenster
+- grafische 24-PPQN-Timeline mit Takt- und Beat-Raster
+- Ereignismarker lassen sich per Maus oder Touch unmittelbar verschieben
+- optionale Wiederholungsblöcke mit Start, Ende und 2–16 Durchläufen
+- Wiederholungsblöcke werden im Take gespeichert und beim Playback ausgeführt
+- bestehende v0.7-Timelines werden beim Laden automatisch zu `TAKE 01`
+- Projektformat 6 bewahrt Takes, Namen, Ereignisse und Wiederholungsblöcke
+- Performance-Bedienung bleibt während Aufnahme und Wiedergabe gegen strukturelle Änderungen geschützt
+
 ## 0.7.0 – Klaus erinnert sich an die Aufführung
 
 - Performance Capture für Szenenwechsel, Patternwechsel sowie lokale und globale Live-Skips
