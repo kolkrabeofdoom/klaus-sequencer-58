@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.0 – Klaus erinnert sich an die Aufführung
+
+- Performance Capture für Szenenwechsel, Patternwechsel sowie lokale und globale Live-Skips
+- gemeinsame 24-PPQN-Timeline mit Takt-, Beat-, Tick- und Pulsanzeige
+- Aufnahmebereitschaft schaltet automatisch in den Performance-Modus
+- Transportstart und Take-Ende werden als eigene Ereignisse gespeichert
+- reproduzierbares Take-Playback mit stabilen Szenen-, Ketten- und Pattern-IDs
+- Live-Skip-Zustände werden beim Playback exakt wiederhergestellt
+- scrollbare Ereignisliste mit einzeln löschbaren Einträgen
+- Take-Fortschrittsanzeige und klare Zustände für Aufnahme und Wiedergabe
+- Performance-Timeline wird vollständig in der Projektdatei gespeichert
+- touchfreundliches, frei skalierbares Performance-Fenster
+- Pause/Fortsetzung innerhalb eines Takes und grafische Ereignisbearbeitung bleiben für den erweiterten Songmodus vorgesehen
+
 ## 0.6.2 – Klaus respektiert unabhängige Reihen
 
 - neue Projekte starten mit acht getrennten 16-Step-Ketten statt vorab verknüpfter Reihen 1+2 und 7+8

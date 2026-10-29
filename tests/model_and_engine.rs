@@ -1,5 +1,7 @@
 use klaus_sequencer_58::engine::{next_timed_index, probability_hits};
-use klaus_sequencer_58::model::{GeneratorRole, Project, Step, StepState};
+use klaus_sequencer_58::model::{
+    GeneratorRole, PerformanceAction, PerformanceEvent, Project, Step, StepState,
+};
 
 #[test]
 fn demo_project_has_valid_adjacent_same_type_chains() {
@@ -74,7 +76,25 @@ fn generation_plan_is_ready_for_all_lanes_and_future_scenes() {
 
 #[test]
 fn project_round_trip_preserves_musical_state() {
-    let project = Project::demo();
+    let mut project = Project::demo();
+    project.performance_timeline = vec![
+        PerformanceEvent {
+            pulse: 0,
+            action: PerformanceAction::TransportStart,
+        },
+        PerformanceEvent {
+            pulse: 48,
+            action: PerformanceAction::LiveSkip {
+                lane: 2,
+                step: 11,
+                enabled: true,
+            },
+        },
+        PerformanceEvent {
+            pulse: 192,
+            action: PerformanceAction::TransportStop,
+        },
+    ];
     let json = project.to_json().expect("serialize project");
     let restored = Project::from_json(&json).expect("deserialize project");
     assert_eq!(restored, project);

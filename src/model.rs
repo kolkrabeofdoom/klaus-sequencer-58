@@ -747,6 +747,13 @@ impl Project {
     ) {
         let affected_old: BTreeSet<usize> = affected_old_ids.iter().copied().collect();
         let affected_new: BTreeSet<usize> = affected_new_ids.iter().copied().collect();
+        self.performance_timeline.retain(|event| {
+            !matches!(
+                &event.action,
+                PerformanceAction::PatternChange { chain_id, .. }
+                    if affected_old.contains(chain_id)
+            )
+        });
         self.patterns
             .retain(|pattern| !affected_old.contains(&pattern.chain_id));
         let mut next_pattern_id = self
