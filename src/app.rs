@@ -3755,7 +3755,10 @@ impl KlausApp {
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new("v0.9.0 · PROTOTYPE").color(theme::MUTED));
+                        ui.label(
+                            RichText::new(format!("v{} · PROTOTYPE", env!("CARGO_PKG_VERSION")))
+                                .color(theme::MUTED),
+                        );
                     });
                 });
             });

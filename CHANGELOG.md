@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1 – Klaus bleibt auch im Dunkeln aufgeräumt
+
+- einheitliches dunkles egui-Theme unabhängig vom Windows-Hell-/Dunkelmodus
+- inhaltsabhängige Höhen und Zeilenumbrüche für Projekt-, MIDI- und Szenenleisten
+- keine abgeschnittenen oder überlappenden Bedienelemente bei kleinen Fenstern und hoher DPI-Skalierung
+- Regressionstests für Theme-Wechsel, 100–200 % Skalierung und mehrere Fensterbreiten
+- Rust-Warnungen für aktuelle Toolchains bereinigt
+- GitHub-Artefakt-Upload auf Node.js 24 aktualisiert
+
 ## 0.9.0 – Klaus baut den Fahrplan
 
 - eigenständiger, vollbildfähiger Composer mit Bibliothek, Fahrplan und Clip-Inspector
