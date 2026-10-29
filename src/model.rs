@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const LANE_COUNT: usize = 8;
 pub const STEPS_PER_LANE: usize = 16;
-pub const PROJECT_FORMAT_VERSION: u32 = 6;
+pub const PROJECT_FORMAT_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LaneKind {
@@ -448,6 +448,38 @@ pub struct PerformanceTake {
     pub loop_block: Option<PerformanceLoop>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SongClipSource {
+    Take { take_id: usize },
+    Scene { scene_id: usize },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ClipTransition {
+    #[default]
+    Legato,
+    Restart,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SongClip {
+    pub id: usize,
+    pub name: String,
+    pub source: SongClipSource,
+    pub bars: u16,
+    pub repeats: u8,
+    pub transpose: i8,
+    pub color_index: u8,
+    #[serde(default)]
+    pub transition: ClipTransition,
+}
+
+impl SongClip {
+    pub fn total_pulses(&self) -> u64 {
+        u64::from(self.bars.max(1)) * 96 * u64::from(self.repeats.max(1))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     pub format_version: u32,
@@ -474,6 +506,8 @@ pub struct Project {
     pub performance_takes: Vec<PerformanceTake>,
     #[serde(default)]
     pub active_performance_take: usize,
+    #[serde(default)]
+    pub song_clips: Vec<SongClip>,
     #[serde(default)]
     pub generation_plan: GenerationPlan,
 }
@@ -581,6 +615,7 @@ impl Project {
             performance_timeline: Vec::new(),
             performance_takes: Vec::new(),
             active_performance_take: 0,
+            song_clips: Vec::new(),
             generation_plan: GenerationPlan::default(),
         };
         project.ensure_patterns();
@@ -668,6 +703,51 @@ impl Project {
         self.performance_takes
             .get(self.active_performance_take)
             .and_then(|take| take.loop_block.as_ref())
+    }
+
+    pub fn add_song_clip(&mut self, source: SongClipSource) -> usize {
+        let id = self
+            .song_clips
+            .iter()
+            .map(|clip| clip.id)
+            .max()
+            .map_or(0, |id| id + 1);
+        let (name, bars) = match source {
+            SongClipSource::Take { take_id } => {
+                let take = self
+                    .performance_takes
+                    .iter()
+                    .find(|take| take.id == take_id);
+                let name = take.map_or_else(|| "TAKE-CLIP".to_owned(), |take| take.name.clone());
+                let pulses = take
+                    .and_then(|take| take.events.last())
+                    .map_or(96, |event| event.pulse.max(1));
+                (name, pulses.div_ceil(96).clamp(1, 256) as u16)
+            }
+            SongClipSource::Scene { scene_id } => {
+                let name = self
+                    .scenes
+                    .iter()
+                    .find(|scene| scene.id == scene_id)
+                    .map_or_else(|| "SZENEN-CLIP".to_owned(), |scene| scene.name.clone());
+                (name, 4)
+            }
+        };
+        self.song_clips.push(SongClip {
+            id,
+            name,
+            source,
+            bars,
+            repeats: 1,
+            transpose: 0,
+            color_index: (id % 4) as u8,
+            transition: ClipTransition::Legato,
+        });
+        self.song_clips.len() - 1
+    }
+
+    pub fn song_length_pulses(&self) -> u64 {
+        self.song_clips.iter().map(SongClip::total_pulses).sum()
     }
 
     pub fn validate_chains(&self) -> Result<(), String> {

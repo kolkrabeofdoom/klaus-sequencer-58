@@ -13,9 +13,10 @@ use crate::midi::{
     NoteInput, decode_note, note_off, note_on, sound_selection_messages,
 };
 use crate::model::{
-    ArpMode, Direction, GeneratorRole, LaneGeneratorConfig, LaneKind, MidiClockMode, MusicalScale,
-    NoteEvent, PerformanceAction, PerformanceEvent, PerformanceLoop, Project, STEPS_PER_LANE,
-    SceneLaunchQuantization, Step, StepDivision, StepState,
+    ArpMode, ClipTransition, Direction, GeneratorRole, LaneGeneratorConfig, LaneKind,
+    MidiClockMode, MusicalScale, NoteEvent, PerformanceAction, PerformanceEvent, PerformanceLoop,
+    Project, STEPS_PER_LANE, SceneLaunchQuantization, SongClipSource, Step, StepDivision,
+    StepState,
 };
 use crate::persistence::{default_autosave_path, load_project, save_project_atomic};
 use crate::theme;
@@ -109,6 +110,12 @@ pub struct KlausApp {
     performance_loop_pass: u8,
     selected_performance_event: Option<usize>,
     performance_status: String,
+    composer_open: bool,
+    composer_fullscreen: bool,
+    selected_song_clip: Option<usize>,
+    song_playback_active: bool,
+    song_clip_index: usize,
+    song_transpose: i8,
 }
 
 impl KlausApp {
@@ -137,7 +144,8 @@ impl KlausApp {
         };
         let promo_capture = std::env::var_os("KLAUS_PROMO_CAPTURE").is_some();
         let timeline_capture = std::env::var_os("KLAUS_TIMELINE_CAPTURE").is_some();
-        if promo_capture || timeline_capture {
+        let composer_capture = std::env::var_os("KLAUS_COMPOSER_CAPTURE").is_some();
+        if promo_capture || timeline_capture || composer_capture {
             project = Project::demo();
             save_status = "DEMO-CAPTURE".to_owned();
         }
@@ -218,6 +226,21 @@ impl KlausApp {
             project.performance_takes[1].name = "BERLIN NACHT · VARIANTE".to_owned();
             project.select_performance_take(0);
         }
+        if composer_capture {
+            let take_id = project.performance_takes[0].id;
+            let scene_id = project.scenes[0].id;
+            let first = project.add_song_clip(SongClipSource::Scene { scene_id });
+            project.song_clips[first].name = "INTRO".to_owned();
+            project.song_clips[first].bars = 4;
+            let second = project.add_song_clip(SongClipSource::Take { take_id });
+            project.song_clips[second].name = "PULS".to_owned();
+            project.song_clips[second].bars = 8;
+            project.song_clips[second].repeats = 2;
+            project.song_clips[second].transpose = 7;
+            let third = project.add_song_clip(SongClipSource::Scene { scene_id });
+            project.song_clips[third].name = "FINALE".to_owned();
+            project.song_clips[third].bars = 4;
+        }
 
         let selected_output = project
             .chains
@@ -247,7 +270,7 @@ impl KlausApp {
             selected_step: 0,
             live_skips: BTreeSet::new(),
             global_live_skip: false,
-            about_open: !promo_capture && !timeline_capture,
+            about_open: !promo_capture && !timeline_capture && !composer_capture,
             last_frame: Instant::now(),
             splash_texture,
             midi: MidiService::new(),
@@ -300,6 +323,12 @@ impl KlausApp {
             performance_loop_pass: 1,
             selected_performance_event: None,
             performance_status: "PERFORMANCE-TAKE BEREIT".to_owned(),
+            composer_open: composer_capture,
+            composer_fullscreen: false,
+            selected_song_clip: composer_capture.then_some(1),
+            song_playback_active: false,
+            song_clip_index: 0,
+            song_transpose: 0,
         }
     }
 
@@ -490,6 +519,17 @@ impl KlausApp {
                         .clicked()
                     {
                         self.performance_window_open = true;
+                    }
+                    if ui
+                        .add(
+                            egui::Button::new(RichText::new("▤ COMPOSER").color(theme::ORANGE))
+                                .fill(theme::PANEL_RAISED)
+                                .stroke(Stroke::new(1.0, theme::ORANGE.gamma_multiply(0.7))),
+                        )
+                        .on_hover_text("Takes und Szenen zu einem Song arrangieren")
+                        .clicked()
+                    {
+                        self.composer_open = true;
                     }
                     ui.separator();
                     ui.label(RichText::new("MIDI CLOCK").color(theme::MUTED).size(9.0));
@@ -854,6 +894,264 @@ impl KlausApp {
                 self.generator_status = "ROLLENPROFIL ZURÜCKGESETZT".to_owned();
             }
             None => {}
+        }
+    }
+
+    fn composer_window(&mut self, ctx: &egui::Context) {
+        if !self.composer_open {
+            return;
+        }
+        let mut open = self.composer_open;
+        let takes: Vec<(usize, String)> = self
+            .project
+            .performance_takes
+            .iter()
+            .map(|take| (take.id, take.name.clone()))
+            .collect();
+        let scenes: Vec<(usize, String)> = self
+            .project
+            .scenes
+            .iter()
+            .map(|scene| (scene.id, scene.name.clone()))
+            .collect();
+        let clips = self.project.song_clips.clone();
+        let mut add_source = None;
+        let mut select_clip = self.selected_song_clip;
+        let mut move_left = false;
+        let mut move_right = false;
+        let mut duplicate = false;
+        let mut remove = false;
+        let mut toggle_fullscreen = false;
+        let mut play_song = false;
+        let mut stop_song = false;
+
+        egui::Window::new("▤ K.L.A.U.S. COMPOSER")
+            .open(&mut open)
+            .default_width(1120.0)
+            .default_height(650.0)
+            .resizable(true)
+            .frame(egui::Frame::window(&ctx.style()).fill(Color32::from_rgb(8, 13, 17)))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.heading(RichText::new("SONG-ARRANGEMENT").color(theme::ORANGE));
+                    ui.label(
+                        RichText::new(format!(
+                            "{} CLIPS · {} TAKTE",
+                            clips.len(),
+                            self.project.song_length_pulses().div_ceil(96)
+                        ))
+                        .color(theme::MUTED),
+                    );
+                    if ui
+                        .add_enabled(!clips.is_empty(), egui::Button::new("▶ SONG"))
+                        .clicked()
+                    {
+                        play_song = true;
+                    }
+                    if ui
+                        .add_enabled(self.song_playback_active, egui::Button::new("■ STOPP"))
+                        .clicked()
+                    {
+                        stop_song = true;
+                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui
+                            .button(if self.composer_fullscreen {
+                                "◱ FENSTER"
+                            } else {
+                                "□ VOLLBILD"
+                            })
+                            .clicked()
+                        {
+                            toggle_fullscreen = true;
+                        }
+                    });
+                });
+                ui.label(
+                    RichText::new(
+                        "Takes und Szenen werden nicht destruktiv als lineare Clips angeordnet.",
+                    )
+                    .color(theme::MUTED),
+                );
+                ui.separator();
+
+                ui.columns(2, |columns| {
+                    columns[0].set_width(245.0);
+                    columns[0].heading(RichText::new("BIBLIOTHEK").color(theme::CYAN));
+                    columns[0].label(RichText::new("PERFORMANCE-TAKES").color(theme::MUTED));
+                    egui::ScrollArea::vertical()
+                        .id_salt("composer_library")
+                        .max_height(230.0)
+                        .show(&mut columns[0], |ui| {
+                            for (id, name) in &takes {
+                                if ui
+                                    .add_sized(
+                                        [225.0, 34.0],
+                                        egui::Button::new(format!("+ TAKE · {name}")),
+                                    )
+                                    .clicked()
+                                {
+                                    add_source = Some(SongClipSource::Take { take_id: *id });
+                                }
+                            }
+                            ui.separator();
+                            ui.label(RichText::new("SZENEN").color(theme::MUTED));
+                            for (id, name) in &scenes {
+                                if ui
+                                    .add_sized(
+                                        [225.0, 34.0],
+                                        egui::Button::new(format!("+ SZENE · {name}")),
+                                    )
+                                    .clicked()
+                                {
+                                    add_source = Some(SongClipSource::Scene { scene_id: *id });
+                                }
+                            }
+                        });
+
+                    columns[1].heading(RichText::new("FAHRPLAN").color(theme::ORANGE));
+                    egui::ScrollArea::horizontal()
+                        .id_salt("composer_arrangement")
+                        .show(&mut columns[1], |ui| {
+                            ui.horizontal(|ui| {
+                                for (index, clip) in clips.iter().enumerate() {
+                                    let color = match clip.color_index % 4 {
+                                        0 => theme::CYAN,
+                                        1 => theme::ORANGE,
+                                        2 => theme::VIOLET,
+                                        _ => theme::ACID,
+                                    };
+                                    let width = (f32::from(clip.bars) * 20.0)
+                                        .clamp(110.0, 300.0);
+                                    let source = match clip.source {
+                                        SongClipSource::Take { .. } => "TAKE",
+                                        SongClipSource::Scene { .. } => "SZENE",
+                                    };
+                                    let response = ui.add_sized(
+                                        [width, 88.0],
+                                        egui::Button::new(
+                                            RichText::new(format!(
+                                                "{source}\n{}\n{} TAKTE × {}",
+                                                clip.name, clip.bars, clip.repeats
+                                            ))
+                                            .color(Color32::WHITE),
+                                        )
+                                        .fill(color.gamma_multiply(0.28))
+                                        .stroke(Stroke::new(
+                                            if select_clip == Some(index) { 3.0 } else { 1.0 },
+                                            color,
+                                        )),
+                                    );
+                                    if response.clicked() {
+                                        select_clip = Some(index);
+                                    }
+                                }
+                                if clips.is_empty() {
+                                    ui.add_sized(
+                                        [460.0, 88.0],
+                                        egui::Label::new(
+                                            RichText::new(
+                                                "TAKE ODER SZENE AUS DER BIBLIOTHEK EINFÜGEN",
+                                            )
+                                            .color(theme::MUTED),
+                                        ),
+                                    );
+                                }
+                            });
+                        });
+
+                    columns[1].separator();
+                    if let Some(index) = select_clip
+                        && let Some(clip) = self.project.song_clips.get_mut(index)
+                    {
+                        columns[1].heading(RichText::new("CLIP-INSPECTOR").color(theme::CYAN));
+                        columns[1].horizontal_wrapped(|ui| {
+                            ui.label("NAME");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut clip.name).desired_width(180.0),
+                            );
+                            ui.label("TAKTE");
+                            ui.add(egui::DragValue::new(&mut clip.bars).range(1..=256));
+                            ui.label("WIEDERHOLUNGEN");
+                            ui.add(egui::DragValue::new(&mut clip.repeats).range(1..=32));
+                            ui.label("TRANSPOSE");
+                            ui.add(egui::DragValue::new(&mut clip.transpose).range(-24..=24));
+                        });
+                        columns[1].horizontal_wrapped(|ui| {
+                            ui.label("ÜBERGANG");
+                            ui.selectable_value(
+                                &mut clip.transition,
+                                ClipTransition::Legato,
+                                "LEGATO",
+                            );
+                            ui.selectable_value(
+                                &mut clip.transition,
+                                ClipTransition::Restart,
+                                "NEUSTART",
+                            );
+                            if ui.button("←").clicked() {
+                                move_left = true;
+                            }
+                            if ui.button("→").clicked() {
+                                move_right = true;
+                            }
+                            if ui.button("⧉ DUPLIZIEREN").clicked() {
+                                duplicate = true;
+                            }
+                            if ui.button("× LÖSCHEN").clicked() {
+                                remove = true;
+                            }
+                        });
+                        columns[1].label(
+                            RichText::new(
+                                "Transposition wirkt ausschließlich auf Melodie-Ketten; Drums bleiben standhaft.",
+                            )
+                            .color(theme::MUTED)
+                            .size(9.0),
+                        );
+                    }
+                });
+            });
+
+        self.composer_open = open;
+        self.selected_song_clip = select_clip;
+        if let Some(source) = add_source {
+            self.selected_song_clip = Some(self.project.add_song_clip(source));
+        }
+        if let Some(index) = self.selected_song_clip {
+            if move_left && index > 0 {
+                self.project.song_clips.swap(index, index - 1);
+                self.selected_song_clip = Some(index - 1);
+            } else if move_right && index + 1 < self.project.song_clips.len() {
+                self.project.song_clips.swap(index, index + 1);
+                self.selected_song_clip = Some(index + 1);
+            } else if duplicate && index < self.project.song_clips.len() {
+                let mut copy = self.project.song_clips[index].clone();
+                copy.id = self
+                    .project
+                    .song_clips
+                    .iter()
+                    .map(|clip| clip.id)
+                    .max()
+                    .map_or(0, |id| id + 1);
+                copy.name = format!("{} KOPIE", copy.name);
+                self.project.song_clips.insert(index + 1, copy);
+                self.selected_song_clip = Some(index + 1);
+            } else if remove && index < self.project.song_clips.len() {
+                self.project.song_clips.remove(index);
+                self.selected_song_clip = (!self.project.song_clips.is_empty())
+                    .then_some(index.min(self.project.song_clips.len() - 1));
+            }
+        }
+        if toggle_fullscreen {
+            self.composer_fullscreen = !self.composer_fullscreen;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.composer_fullscreen));
+        }
+        if play_song {
+            self.start_song_playback();
+        }
+        if stop_song {
+            self.stop_transport();
         }
     }
 
@@ -1798,6 +2096,147 @@ impl KlausApp {
         }
     }
 
+    fn apply_song_action(&mut self, action: PerformanceAction) {
+        match action {
+            PerformanceAction::SceneLaunch { scene_id } => {
+                if let Some(index) = self
+                    .project
+                    .scenes
+                    .iter()
+                    .position(|scene| scene.id == scene_id)
+                {
+                    self.apply_scene_now(index);
+                }
+            }
+            PerformanceAction::PatternChange {
+                chain_id,
+                pattern_id,
+            } => {
+                let chain = self
+                    .project
+                    .chains
+                    .iter()
+                    .position(|item| item.id == chain_id);
+                let pattern = self
+                    .project
+                    .patterns
+                    .iter()
+                    .position(|item| item.id == pattern_id);
+                if let (Some(chain), Some(pattern)) = (chain, pattern) {
+                    let _ = self.project.apply_chain_pattern(chain, pattern);
+                }
+            }
+            PerformanceAction::LiveSkip {
+                lane,
+                step,
+                enabled,
+            } => {
+                if enabled {
+                    self.live_skips.insert((lane, step));
+                } else {
+                    self.live_skips.remove(&(lane, step));
+                }
+            }
+            PerformanceAction::TransportStart | PerformanceAction::TransportStop => {}
+        }
+    }
+
+    fn apply_song_clip(&mut self, index: usize) {
+        let Some(clip) = self.project.song_clips.get(index).cloned() else {
+            return;
+        };
+        self.midi.panic();
+        if clip.transition == ClipTransition::Restart {
+            self.engine.stop();
+            self.engine.start();
+        }
+        self.song_transpose = clip.transpose;
+        self.live_skips.clear();
+        match clip.source {
+            SongClipSource::Scene { scene_id } => {
+                self.apply_song_action(PerformanceAction::SceneLaunch { scene_id });
+            }
+            SongClipSource::Take { take_id } => {
+                let actions: Vec<_> = self
+                    .project
+                    .performance_takes
+                    .iter()
+                    .find(|take| take.id == take_id)
+                    .map(|take| {
+                        take.events
+                            .iter()
+                            .filter(|event| event.pulse == 0)
+                            .map(|event| event.action.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                for action in actions {
+                    self.apply_song_action(action);
+                }
+            }
+        }
+    }
+
+    fn start_song_playback(&mut self) {
+        if self.project.song_clips.is_empty() {
+            return;
+        }
+        self.stop_transport();
+        self.transport_pulses = 0;
+        self.song_playback_active = true;
+        self.song_clip_index = 0;
+        self.apply_song_clip(0);
+        self.engine.start();
+    }
+
+    fn update_song_playback(&mut self, previous: u64, current: u64) {
+        if !self.song_playback_active {
+            return;
+        }
+        let total = self.project.song_length_pulses();
+        if current >= total {
+            self.song_playback_active = false;
+            self.stop_transport();
+            return;
+        }
+        let mut start = 0;
+        let mut found = 0;
+        for (index, clip) in self.project.song_clips.iter().enumerate() {
+            if current < start + clip.total_pulses() {
+                found = index;
+                break;
+            }
+            start += clip.total_pulses();
+        }
+        if found != self.song_clip_index {
+            self.song_clip_index = found;
+            self.apply_song_clip(found);
+        }
+        let Some(clip) = self.project.song_clips.get(found).cloned() else {
+            return;
+        };
+        if let SongClipSource::Take { take_id } = clip.source {
+            let events = self
+                .project
+                .performance_takes
+                .iter()
+                .find(|take| take.id == take_id)
+                .map(|take| take.events.clone())
+                .unwrap_or_default();
+            let cycle = events.last().map_or(96, |event| event.pulse.max(96));
+            for pulse in previous.saturating_add(1)..=current {
+                let local = (pulse.saturating_sub(start)) % cycle;
+                for action in events
+                    .iter()
+                    .filter(|event| event.pulse == local)
+                    .map(|event| event.action.clone())
+                {
+                    self.apply_song_action(action);
+                }
+            }
+        }
+    }
+
     fn stop_performance_playback(&mut self) {
         self.performance_playback_active = false;
         self.performance_playback_cursor = 0;
@@ -1965,6 +2404,7 @@ impl KlausApp {
                 self.transport_pulses = self.transport_pulses.wrapping_add(pulses);
                 self.maybe_launch_queued_scene(previous, self.transport_pulses);
                 self.apply_performance_events_through(self.transport_pulses);
+                self.update_song_playback(previous, self.transport_pulses);
                 f64::from(pulses as u32) * 60.0 / (f64::from(self.project.bpm) * 24.0)
             }
             MidiClockMode::Internal | MidiClockMode::Master => {
@@ -1982,6 +2422,7 @@ impl KlausApp {
                 }
                 self.maybe_launch_queued_scene(previous, self.transport_pulses);
                 self.apply_performance_events_through(self.transport_pulses);
+                self.update_song_playback(previous, self.transport_pulses);
                 delta_seconds
             }
         }
@@ -2015,6 +2456,7 @@ impl KlausApp {
         }
         self.performance_capture_active = false;
         self.performance_playback_active = false;
+        self.song_playback_active = false;
         self.performance_playback_cursor = 0;
         if self.project.midi_clock_mode == MidiClockMode::Master {
             self.midi.schedule_realtime(Instant::now(), 0xFC);
@@ -2470,13 +2912,18 @@ impl KlausApp {
                 let offset = slice_seconds * f64::from(ratchet);
                 let note_time = base_time + Duration::from_secs_f64(offset);
                 for note in &step.notes {
+                    let pitch = if self.song_playback_active && lane.kind == LaneKind::Melody {
+                        (i16::from(note.pitch) + i16::from(self.song_transpose)).clamp(0, 127) as u8
+                    } else {
+                        note.pitch
+                    };
                     let gate_seconds = (slice_seconds * f64::from(note.gate.clamp(0.05, 1.0)))
                         .clamp(0.001, slice_seconds * 0.98);
                     self.midi
-                        .schedule(note_time, note_on(channel, note.pitch, note.velocity));
+                        .schedule(note_time, note_on(channel, pitch, note.velocity));
                     self.midi.schedule(
                         note_time + Duration::from_secs_f64(gate_seconds),
-                        note_off(channel, note.pitch),
+                        note_off(channel, pitch),
                     );
                 }
             }
@@ -3361,6 +3808,7 @@ impl eframe::App for KlausApp {
         self.matrix(ctx);
         self.generator_window(ctx);
         self.performance_window(ctx);
+        self.composer_window(ctx);
         self.about_window(ctx);
     }
 }

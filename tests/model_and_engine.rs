@@ -1,6 +1,7 @@
 use klaus_sequencer_58::engine::{next_timed_index, probability_hits};
 use klaus_sequencer_58::model::{
-    GeneratorRole, PerformanceAction, PerformanceEvent, PerformanceLoop, Project, Step, StepState,
+    ClipTransition, GeneratorRole, PerformanceAction, PerformanceEvent, PerformanceLoop, Project,
+    SongClipSource, Step, StepState,
 };
 
 #[test]
@@ -131,6 +132,28 @@ fn performance_takes_can_be_created_switched_and_removed() {
     assert!(project.remove_active_performance_take());
     assert_eq!(project.performance_takes.len(), 1);
     assert_eq!(project.performance_timeline[0].pulse, 96);
+}
+
+#[test]
+fn song_arrangement_accepts_take_and_scene_clips() {
+    let mut project = Project::demo();
+    let take_id = project.performance_takes[0].id;
+    let scene_id = project.scenes[0].id;
+    let take_clip = project.add_song_clip(SongClipSource::Take { take_id });
+    let scene_clip = project.add_song_clip(SongClipSource::Scene { scene_id });
+
+    project.song_clips[take_clip].bars = 8;
+    project.song_clips[take_clip].repeats = 2;
+    project.song_clips[take_clip].transpose = 7;
+    project.song_clips[scene_clip].transition = ClipTransition::Restart;
+
+    assert_eq!(project.song_clips.len(), 2);
+    assert_eq!(project.song_length_pulses(), 20 * 96);
+    assert_eq!(project.song_clips[take_clip].transpose, 7);
+    assert_eq!(
+        project.song_clips[scene_clip].transition,
+        ClipTransition::Restart
+    );
 }
 
 #[test]
