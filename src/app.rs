@@ -3538,7 +3538,7 @@ impl KlausApp {
             });
     }
 
-    fn matrix(&mut self, ctx: &egui::Context) {
+    fn matrix(&mut self, ctx: &egui::Context) -> (f32, f32) {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme::GRAPHITE).inner_margin(12.0))
             .show(ctx, |ui| {
@@ -3557,172 +3557,190 @@ impl KlausApp {
                 });
                 ui.add_space(4.0);
 
-                for lane_index in 0..self.project.lanes.len() {
-                    let color = theme::lane_color(lane_index);
-                    let lane_name = self.project.lanes[lane_index].name.clone();
-                    let lane_kind = self.project.lanes[lane_index].kind;
-                    ui.horizontal(|ui| {
-                        let lane_selected = lane_index == self.selected_lane;
-                        if ui
-                            .add_sized(
-                                [112.0, 42.0],
-                                egui::Button::new(
-                                    RichText::new(format!("{}  {}", lane_index + 1, lane_name))
-                                        .color(if lane_selected { Color32::BLACK } else { color })
-                                        .size(10.0),
-                                )
-                                .fill(if lane_selected {
-                                    color
-                                } else {
-                                    theme::PANEL
-                                }),
-                            )
-                            .clicked()
-                        {
-                            self.selected_lane = lane_index;
-                        }
-
-                        let reserved = 66.0;
-                        let step_size =
-                            ((ui.available_width() - reserved) / 16.0 - 4.0).clamp(25.0, 46.0);
-                        for step_index in 0..STEPS_PER_LANE {
-                            let step = &self.project.lanes[lane_index].steps[step_index];
-                            let live_skipped = self.live_skips.contains(&(lane_index, step_index));
-                            let is_current = self.engine.playing
-                                && self.engine.lane_active[lane_index]
-                                && self.engine.lane_positions[lane_index] == step_index;
-                            let selected = lane_index == self.selected_lane
-                                && step_index == self.selected_step;
-                            let label = if live_skipped {
-                                "L".to_owned()
-                            } else if step.state == StepState::Skip {
-                                "×".to_owned()
-                            } else if step.ratchets > 1 {
-                                format!("{}", step.ratchets)
-                            } else if step.notes.len() > 1 {
-                                format!("{}n", step.notes.len())
-                            } else {
-                                String::new()
-                            };
-                            let fill = if live_skipped {
-                                theme::DANGER.gamma_multiply(0.42)
-                            } else {
-                                match step.state {
-                                    StepState::Active => color
-                                        .gamma_multiply(0.38 + f32::from(step.probability) / 180.0),
-                                    StepState::Rest => Color32::from_rgb(18, 24, 27),
-                                    StepState::Skip => Color32::from_rgb(31, 25, 27),
+                let matrix_rows = egui::ScrollArea::vertical()
+                    .id_salt("chain_matrix_rows")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for lane_index in 0..self.project.lanes.len() {
+                            let color = theme::lane_color(lane_index);
+                            let lane_name = self.project.lanes[lane_index].name.clone();
+                            let lane_kind = self.project.lanes[lane_index].kind;
+                            ui.horizontal(|ui| {
+                                let lane_selected = lane_index == self.selected_lane;
+                                if ui
+                                    .add_sized(
+                                        [112.0, 42.0],
+                                        egui::Button::new(
+                                            RichText::new(format!(
+                                                "{}  {}",
+                                                lane_index + 1,
+                                                lane_name
+                                            ))
+                                            .color(if lane_selected {
+                                                Color32::BLACK
+                                            } else {
+                                                color
+                                            })
+                                            .size(10.0),
+                                        )
+                                        .fill(if lane_selected { color } else { theme::PANEL }),
+                                    )
+                                    .clicked()
+                                {
+                                    self.selected_lane = lane_index;
                                 }
-                            };
-                            let stroke = if is_current {
-                                Stroke::new(2.5_f32, Color32::WHITE)
-                            } else if selected {
-                                Stroke::new(2.0_f32, theme::ACID)
-                            } else {
-                                Stroke::new(1.0_f32, Color32::from_rgb(49, 61, 66))
-                            };
-                            let response = ui.add_sized(
-                                [step_size, 42.0],
-                                egui::Button::new(RichText::new(label).size(10.0))
-                                    .fill(fill)
-                                    .stroke(stroke),
-                            );
-                            if response.clicked() {
-                                self.selected_lane = lane_index;
-                                self.selected_step = step_index;
-                                match self.mode {
-                                    WorkMode::Edit => {
-                                        let default_pitch = if lane_kind == LaneKind::Melody {
-                                            48 + lane_index as u8
-                                        } else {
-                                            36 + (lane_index.saturating_sub(6) as u8) * 2
-                                        };
-                                        self.project.lanes[lane_index].steps[step_index]
-                                            .toggle_active(default_pitch);
-                                    }
-                                    WorkMode::Perform => {
-                                        if self.global_live_skip {
-                                            let should_add = !self
-                                                .live_skips
-                                                .contains(&(lane_index, step_index));
-                                            for target_lane in 0..self.project.lanes.len() {
-                                                self.set_live_skip(
-                                                    target_lane,
-                                                    step_index,
-                                                    should_add,
-                                                );
+
+                                let reserved = 66.0;
+                                let step_size = ((ui.available_width() - reserved) / 16.0 - 4.0)
+                                    .clamp(25.0, 46.0);
+                                for step_index in 0..STEPS_PER_LANE {
+                                    let step = &self.project.lanes[lane_index].steps[step_index];
+                                    let live_skipped =
+                                        self.live_skips.contains(&(lane_index, step_index));
+                                    let is_current = self.engine.playing
+                                        && self.engine.lane_active[lane_index]
+                                        && self.engine.lane_positions[lane_index] == step_index;
+                                    let selected = lane_index == self.selected_lane
+                                        && step_index == self.selected_step;
+                                    let label = if live_skipped {
+                                        "L".to_owned()
+                                    } else if step.state == StepState::Skip {
+                                        "×".to_owned()
+                                    } else if step.ratchets > 1 {
+                                        format!("{}", step.ratchets)
+                                    } else if step.notes.len() > 1 {
+                                        format!("{}n", step.notes.len())
+                                    } else {
+                                        String::new()
+                                    };
+                                    let fill = if live_skipped {
+                                        theme::DANGER.gamma_multiply(0.42)
+                                    } else {
+                                        match step.state {
+                                            StepState::Active => color.gamma_multiply(
+                                                0.38 + f32::from(step.probability) / 180.0,
+                                            ),
+                                            StepState::Rest => Color32::from_rgb(18, 24, 27),
+                                            StepState::Skip => Color32::from_rgb(31, 25, 27),
+                                        }
+                                    };
+                                    let stroke = if is_current {
+                                        Stroke::new(2.5_f32, Color32::WHITE)
+                                    } else if selected {
+                                        Stroke::new(2.0_f32, theme::ACID)
+                                    } else {
+                                        Stroke::new(1.0_f32, Color32::from_rgb(49, 61, 66))
+                                    };
+                                    let response = ui.add_sized(
+                                        [step_size, 42.0],
+                                        egui::Button::new(RichText::new(label).size(10.0))
+                                            .fill(fill)
+                                            .stroke(stroke),
+                                    );
+                                    if response.clicked() {
+                                        self.selected_lane = lane_index;
+                                        self.selected_step = step_index;
+                                        match self.mode {
+                                            WorkMode::Edit => {
+                                                let default_pitch = if lane_kind == LaneKind::Melody
+                                                {
+                                                    48 + lane_index as u8
+                                                } else {
+                                                    36 + (lane_index.saturating_sub(6) as u8) * 2
+                                                };
+                                                self.project.lanes[lane_index].steps[step_index]
+                                                    .toggle_active(default_pitch);
                                             }
-                                        } else {
-                                            let enabled = !self
-                                                .live_skips
-                                                .contains(&(lane_index, step_index));
-                                            self.set_live_skip(lane_index, step_index, enabled);
+                                            WorkMode::Perform => {
+                                                if self.global_live_skip {
+                                                    let should_add = !self
+                                                        .live_skips
+                                                        .contains(&(lane_index, step_index));
+                                                    for target_lane in 0..self.project.lanes.len() {
+                                                        self.set_live_skip(
+                                                            target_lane,
+                                                            step_index,
+                                                            should_add,
+                                                        );
+                                                    }
+                                                } else {
+                                                    let enabled = !self
+                                                        .live_skips
+                                                        .contains(&(lane_index, step_index));
+                                                    self.set_live_skip(
+                                                        lane_index, step_index, enabled,
+                                                    );
+                                                }
+                                            }
                                         }
                                     }
+                                    if response.secondary_clicked() && self.mode == WorkMode::Edit {
+                                        self.project.lanes[lane_index].steps[step_index].state =
+                                            StepState::Skip;
+                                    }
                                 }
-                            }
-                            if response.secondary_clicked() && self.mode == WorkMode::Edit {
-                                self.project.lanes[lane_index].steps[step_index].state =
-                                    StepState::Skip;
-                            }
+
+                                let lane = &mut self.project.lanes[lane_index];
+                                let mute_fill = if lane.muted {
+                                    color
+                                } else {
+                                    theme::PANEL_RAISED
+                                };
+                                if ui
+                                    .add_sized(
+                                        [28.0, 32.0],
+                                        egui::Button::new("M").fill(mute_fill).stroke(Stroke::new(
+                                            1.0_f32,
+                                            Color32::from_rgb(63, 76, 82),
+                                        )),
+                                    )
+                                    .clicked()
+                                {
+                                    lane.muted = !lane.muted;
+                                }
+                                let solo_fill = if lane.solo {
+                                    theme::ACID
+                                } else {
+                                    theme::PANEL_RAISED
+                                };
+                                if ui
+                                    .add_sized(
+                                        [28.0, 32.0],
+                                        egui::Button::new("S").fill(solo_fill).stroke(Stroke::new(
+                                            1.0_f32,
+                                            Color32::from_rgb(63, 76, 82),
+                                        )),
+                                    )
+                                    .clicked()
+                                {
+                                    lane.solo = !lane.solo;
+                                }
+                            });
+                            ui.add_space(3.0);
                         }
 
-                        let lane = &mut self.project.lanes[lane_index];
-                        let mute_fill = if lane.muted {
-                            color
-                        } else {
-                            theme::PANEL_RAISED
-                        };
-                        if ui
-                            .add_sized(
-                                [28.0, 32.0],
-                                egui::Button::new("M")
-                                    .fill(mute_fill)
-                                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(63, 76, 82))),
-                            )
-                            .clicked()
-                        {
-                            lane.muted = !lane.muted;
-                        }
-                        let solo_fill = if lane.solo {
-                            theme::ACID
-                        } else {
-                            theme::PANEL_RAISED
-                        };
-                        if ui
-                            .add_sized(
-                                [28.0, 32.0],
-                                egui::Button::new("S")
-                                    .fill(solo_fill)
-                                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(63, 76, 82))),
-                            )
-                            .clicked()
-                        {
-                            lane.solo = !lane.solo;
-                        }
-                    });
-                    ui.add_space(3.0);
-                }
-
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(match self.mode {
-                            WorkMode::Edit => "Tippen: Step aktivieren · Rechtsklick: Skip",
-                            WorkMode::Perform => "Tippen: temporärer Live-Skip",
-                        })
-                        .color(theme::MUTED)
-                        .size(9.0),
-                    );
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            RichText::new("SCENE 04 · NIGHT DRIVE")
-                                .color(theme::ACID)
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(match self.mode {
+                                    WorkMode::Edit => "Tippen: Step aktivieren · Rechtsklick: Skip",
+                                    WorkMode::Perform => "Tippen: temporärer Live-Skip",
+                                })
+                                .color(theme::MUTED)
                                 .size(9.0),
-                        );
+                            );
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                ui.label(
+                                    RichText::new("SCENE 04 · NIGHT DRIVE")
+                                        .color(theme::ACID)
+                                        .size(9.0),
+                                );
+                            });
+                        });
                     });
-                });
-            });
+                (matrix_rows.content_size.y, matrix_rows.inner_rect.height())
+            })
+            .inner
     }
 
     fn about_window(&mut self, ctx: &egui::Context) {
@@ -4203,6 +4221,51 @@ mod tests {
                 }
             }
         }
+        drop(app);
+        let _ = std::fs::remove_file(autosave);
+    }
+
+    #[test]
+    fn chain_matrix_scrolls_when_the_window_is_short() {
+        let ctx = eframe::egui::Context::default();
+        let cc = eframe::CreationContext::_new_kittest(ctx.clone());
+        let mut app = super::KlausApp::new(&cc);
+        // Keep Drop's autosave away from the user's project.
+        let autosave = std::env::temp_dir().join(format!(
+            "klaus-matrix-layout-test-{}.json",
+            std::process::id()
+        ));
+        app.autosave_path = autosave.clone();
+        app.project = crate::model::Project::demo();
+
+        let input = eframe::egui::RawInput {
+            screen_rect: Some(eframe::egui::Rect::from_min_size(
+                eframe::egui::Pos2::ZERO,
+                eframe::egui::vec2(1440.0, 720.0),
+            )),
+            system_theme: Some(eframe::egui::Theme::Dark),
+            ..Default::default()
+        };
+        let mut matrix_size = (0.0, 0.0);
+        for _ in 0..3 {
+            let _ = ctx.run(input.clone(), |ctx| {
+                app.top_bar(ctx);
+                app.project_bar(ctx);
+                app.midi_bar(ctx);
+                app.scenes_bar(ctx);
+                app.piano_roll(ctx);
+                app.inspector(ctx);
+                matrix_size = app.matrix(ctx);
+            });
+        }
+
+        let (content_height, viewport_height) = matrix_size;
+        assert!(viewport_height > 0.0, "matrix viewport has no height");
+        assert!(
+            content_height > viewport_height,
+            "matrix rows must overflow at 720 px: content={content_height}, viewport={viewport_height}"
+        );
+
         drop(app);
         let _ = std::fs::remove_file(autosave);
     }
