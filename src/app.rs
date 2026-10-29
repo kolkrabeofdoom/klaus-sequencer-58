@@ -12,6 +12,7 @@ use crate::midi::{
     MidiEvent, MidiInputEvent, MidiInputMessage, MidiInputService, MidiService, MidiStatus,
     NoteInput, decode_note, note_off, note_on, sound_selection_messages,
 };
+use crate::midi_export::export_song;
 use crate::model::{
     ArpMode, ClipTransition, Direction, GeneratorRole, LaneGeneratorConfig, LaneKind,
     MidiClockMode, MusicalScale, NoteEvent, PerformanceAction, PerformanceEvent, PerformanceLoop,
@@ -924,6 +925,7 @@ impl KlausApp {
         let mut toggle_fullscreen = false;
         let mut play_song = false;
         let mut stop_song = false;
+        let mut export_midi = false;
 
         egui::Window::new("▤ K.L.A.U.S. COMPOSER")
             .open(&mut open)
@@ -953,6 +955,12 @@ impl KlausApp {
                         .clicked()
                     {
                         stop_song = true;
+                    }
+                    if ui
+                        .add_enabled(!clips.is_empty(), egui::Button::new("⇩ MIDI EXPORT"))
+                        .clicked()
+                    {
+                        export_midi = true;
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui
@@ -1152,6 +1160,17 @@ impl KlausApp {
         }
         if stop_song {
             self.stop_transport();
+        }
+        if export_midi
+            && let Some(path) = rfd::FileDialog::new()
+                .add_filter("Standard MIDI File", &["mid"])
+                .set_file_name(format!("{}.mid", self.project.title))
+                .save_file()
+        {
+            self.save_status = match export_song(&self.project, &path) {
+                Ok(()) => format!("MIDI EXPORTIERT · {}", path.display()),
+                Err(error) => format!("MIDI-EXPORTFEHLER · {error}"),
+            };
         }
     }
 
@@ -3724,7 +3743,7 @@ impl KlausApp {
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new("v0.8.0 · PROTOTYPE").color(theme::MUTED));
+                        ui.label(RichText::new("v0.9.0 · PROTOTYPE").color(theme::MUTED));
                     });
                 });
             });

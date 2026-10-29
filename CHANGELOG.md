@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.0 – Klaus baut den Fahrplan
+
+- eigenständiger, vollbildfähiger Composer mit Bibliothek, Fahrplan und Clip-Inspector
+- Performance-Takes und Szenen als gleichberechtigte Songclips
+- nicht destruktive Clip-Länge, Wiederholungen, Duplizieren, Löschen und Umsortieren
+- Legato-Übergänge als Standard sowie optionaler Neustart der Kettenphasen
+- gemeinsame Cliptransposition von −24 bis +24 Halbtönen; Drumreihen bleiben unverändert
+- Songwiedergabe verarbeitet Szenen-, Pattern- und Live-Skip-Ereignisse aus Takes
+- Standard-MIDI-File-Type-1-Export mit 480 PPQ
+- Tempo-/Taktspur und eine MIDI-Spur pro Kette
+- MIDI-Export berücksichtigt Kanäle, Bank Select, Program Change, Probability und Ratchets
+- Projektformat 7 speichert das vollständige Song-Arrangement
+
 ## 0.8.0 – Klaus schneidet die Zeit in handliche Scheiben
 
 - mehrere benannte Performance-Takes pro Projekt
