@@ -20,18 +20,18 @@ pub fn install(ctx: &egui::Context) {
     visuals.extreme_bg_color = Color32::from_rgb(9, 12, 14);
     visuals.faint_bg_color = PANEL_RAISED;
     visuals.widgets.noninteractive.bg_fill = PANEL;
-    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(55, 67, 73));
+    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(55, 67, 73));
     visuals.widgets.inactive.bg_fill = PANEL_RAISED;
     visuals.widgets.inactive.weak_bg_fill = PANEL_RAISED;
-    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(63, 76, 82));
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(63, 76, 82));
     visuals.widgets.hovered.bg_fill = Color32::from_rgb(45, 56, 60);
     visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(45, 56, 60);
-    visuals.widgets.hovered.bg_stroke = Stroke::new(1.5, CYAN);
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.5_f32, CYAN);
     visuals.widgets.active.bg_fill = CYAN;
     visuals.widgets.active.weak_bg_fill = CYAN;
-    visuals.widgets.active.fg_stroke = Stroke::new(1.5, Color32::from_rgb(6, 17, 14));
+    visuals.widgets.active.fg_stroke = Stroke::new(1.5_f32, Color32::from_rgb(6, 17, 14));
     visuals.selection.bg_fill = CYAN.gamma_multiply(0.72);
-    visuals.selection.stroke = Stroke::new(1.0, Color32::WHITE);
+    visuals.selection.stroke = Stroke::new(1.0_f32, Color32::WHITE);
     visuals.window_corner_radius = CornerRadius::same(10);
 
     let mut style = Style {

@@ -948,29 +948,28 @@ impl Project {
         }
         self.patterns
             .retain(|pattern| !affected_old.contains(&pattern.chain_id));
-        let mut next_pattern_id = self
+        let next_pattern_id = self
             .patterns
             .iter()
             .map(|pattern| pattern.id)
             .max()
             .map_or(0, |id| id + 1);
-        for chain in self
-            .chains
-            .iter()
-            .filter(|chain| affected_new.contains(&chain.id))
-        {
+        for (pattern_id, chain) in (next_pattern_id..).zip(
+            self.chains
+                .iter()
+                .filter(|chain| affected_new.contains(&chain.id)),
+        ) {
             let lane_steps = chain
                 .lane_ids
                 .iter()
                 .map(|lane_id| self.lanes[*lane_id].steps.clone())
                 .collect();
             self.patterns.push(ChainPattern {
-                id: next_pattern_id,
+                id: pattern_id,
                 chain_id: chain.id,
                 name: "PATTERN 01".to_owned(),
                 lane_steps,
             });
-            next_pattern_id += 1;
         }
 
         self.active_pattern_by_chain = self
