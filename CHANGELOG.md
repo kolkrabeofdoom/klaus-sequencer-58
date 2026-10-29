@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.2 – Klaus hält alle Reihen in Reichweite
+
+- die mittlere Chain Matrix ist bei niedrigen Fensterhöhen vertikal scrollbar
+- Piano-Roll, Inspector und Matrix-Kopf bleiben beim Scrollen fest stehen
+- Mausrad, sichtbarer Scrollbalken und Touch-Drag werden unterstützt
+- Regressionstest für den Überlauf bei 1440 × 720 Pixeln
+
 ## 0.9.1 – Klaus bleibt auch im Dunkeln aufgeräumt
 
 - einheitliches dunkles egui-Theme unabhängig vom Windows-Hell-/Dunkelmodus
