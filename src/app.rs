@@ -379,7 +379,7 @@ impl KlausApp {
                                 [44.0, 44.0],
                                 egui::Button::new("■")
                                     .fill(theme::PANEL_RAISED)
-                                    .stroke(Stroke::new(1.0, Color32::from_rgb(63, 76, 82))),
+                                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(63, 76, 82))),
                             )
                             .on_hover_text("Stopp und Rückkehr zum Anfang")
                             .clicked()
@@ -421,7 +421,7 @@ impl KlausApp {
                                 [62.0, 42.0],
                                 egui::Button::new(RichText::new("PANIC").color(theme::DANGER))
                                     .fill(Color32::from_rgb(38, 22, 23))
-                                    .stroke(Stroke::new(1.0, Color32::from_rgb(105, 52, 54))),
+                                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(105, 52, 54))),
                             )
                             .on_hover_text("All Notes Off")
                             .clicked()
@@ -433,7 +433,7 @@ impl KlausApp {
                                 [44.0, 42.0],
                                 egui::Button::new("ⓘ")
                                     .fill(theme::PANEL_RAISED)
-                                    .stroke(Stroke::new(1.0, Color32::from_rgb(63, 76, 82))),
+                                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(63, 76, 82))),
                             )
                             .on_hover_text("Über K.L.A.U.S.")
                             .clicked()
@@ -499,7 +499,7 @@ impl KlausApp {
                                 RichText::new("✦ KOSMISCHER GENERATOR").color(theme::ACID),
                             )
                             .fill(theme::PANEL_RAISED)
-                            .stroke(Stroke::new(1.0, theme::ACID.gamma_multiply(0.7))),
+                            .stroke(Stroke::new(1.0_f32, theme::ACID.gamma_multiply(0.7))),
                         )
                         .on_hover_text(
                             "Berlin-School-inspirierte Motive für die gewählte Reihe erzeugen",
@@ -518,7 +518,7 @@ impl KlausApp {
                                 },
                             ))
                             .fill(theme::PANEL_RAISED)
-                            .stroke(Stroke::new(1.0, theme::CYAN.gamma_multiply(0.7))),
+                            .stroke(Stroke::new(1.0_f32, theme::CYAN.gamma_multiply(0.7))),
                         )
                         .clicked()
                     {
@@ -528,7 +528,7 @@ impl KlausApp {
                         .add(
                             egui::Button::new(RichText::new("▤ COMPOSER").color(theme::ORANGE))
                                 .fill(theme::PANEL_RAISED)
-                                .stroke(Stroke::new(1.0, theme::ORANGE.gamma_multiply(0.7))),
+                                .stroke(Stroke::new(1.0_f32, theme::ORANGE.gamma_multiply(0.7))),
                         )
                         .on_hover_text("Takes und Szenen zu einem Song arrangieren")
                         .clicked()
@@ -823,7 +823,7 @@ impl KlausApp {
                             [28.0, 32.0],
                             egui::Button::new(label)
                                 .fill(fill)
-                                .stroke(Stroke::new(1.0, Color32::from_rgb(56, 70, 75))),
+                                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(56, 70, 75))),
                         );
                     }
                     if !preview_matches {
@@ -1052,7 +1052,7 @@ impl KlausApp {
                                         )
                                         .fill(color.gamma_multiply(0.28))
                                         .stroke(Stroke::new(
-                                            if select_clip == Some(index) { 3.0 } else { 1.0 },
+                                            if select_clip == Some(index) { 3.0_f32 } else { 1.0_f32 },
                                             color,
                                         )),
                                     );
@@ -1405,7 +1405,7 @@ impl KlausApp {
                     ui.painter().line_segment(
                         [egui::pos2(x, timeline_rect.top()), egui::pos2(x, timeline_rect.bottom())],
                         Stroke::new(
-                            if is_bar { 1.5 } else { 0.5 },
+                            if is_bar { 1.5_f32 } else { 0.5_f32 },
                             if is_bar { theme::ORANGE } else { Color32::from_rgb(50, 65, 70) },
                         ),
                     );
@@ -3521,9 +3521,9 @@ impl KlausApp {
                                 let response = ui.add_sized(
                                     [cell_width, 24.0],
                                     egui::Button::new("").fill(fill).stroke(if selected {
-                                        Stroke::new(1.0, Color32::WHITE)
+                                        Stroke::new(1.0_f32, Color32::WHITE)
                                     } else {
-                                        Stroke::new(1.0, Color32::from_rgb(46, 57, 62))
+                                        Stroke::new(1.0_f32, Color32::from_rgb(46, 57, 62))
                                     }),
                                 );
                                 if response.clicked() {
@@ -3615,11 +3615,11 @@ impl KlausApp {
                                 }
                             };
                             let stroke = if is_current {
-                                Stroke::new(2.5, Color32::WHITE)
+                                Stroke::new(2.5_f32, Color32::WHITE)
                             } else if selected {
-                                Stroke::new(2.0, theme::ACID)
+                                Stroke::new(2.0_f32, theme::ACID)
                             } else {
-                                Stroke::new(1.0, Color32::from_rgb(49, 61, 66))
+                                Stroke::new(1.0_f32, Color32::from_rgb(49, 61, 66))
                             };
                             let response = ui.add_sized(
                                 [step_size, 42.0],
@@ -3678,7 +3678,7 @@ impl KlausApp {
                                 [28.0, 32.0],
                                 egui::Button::new("M")
                                     .fill(mute_fill)
-                                    .stroke(Stroke::new(1.0, Color32::from_rgb(63, 76, 82))),
+                                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(63, 76, 82))),
                             )
                             .clicked()
                         {
@@ -3694,7 +3694,7 @@ impl KlausApp {
                                 [28.0, 32.0],
                                 egui::Button::new("S")
                                     .fill(solo_fill)
-                                    .stroke(Stroke::new(1.0, Color32::from_rgb(63, 76, 82))),
+                                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(63, 76, 82))),
                             )
                             .clicked()
                         {
