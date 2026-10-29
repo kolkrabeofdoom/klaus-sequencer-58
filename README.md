@@ -8,7 +8,7 @@ Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in 
 > „Warum nur einen? Alle brauchen zwei 303s.“  
 > — Klaus, vermutlich während einer völlig sachlichen Budgetbesprechung
 
-[![Version](https://img.shields.io/badge/version-0.6.1-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
+[![Version](https://img.shields.io/badge/version-0.6.2-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.89%2B-cyan)](https://www.rust-lang.org/)
 [![Plattform](https://img.shields.io/badge/platform-Windows-57d2d2)](#systemanforderungen)
 [![Lizenz](https://img.shields.io/badge/license-AGPL--3.0--or--later-9d69e3)](#lizenz)
@@ -107,7 +107,7 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 
 Die aktuelle Windows-Version befindet sich unter [Releases](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases).
 
-1. `KLAUS-Sequencer-58-v0.6.1.exe` herunterladen.
+1. `KLAUS-Sequencer-58-v0.6.2.exe` herunterladen.
 2. Anwendung starten.
 3. MIDI-Ausgang und optional MIDI-Eingang auswählen.
 4. Gerät verbinden.
@@ -268,6 +268,10 @@ Alle Ergebnisse erscheinen zuerst in einer 16-Step-Vorschau. Erst **Übernehmen*
 ### Verkettungsregeln
 
 Ketten dürfen ausschließlich aus benachbarten Reihen desselben Typs bestehen. Eine Melodiereihe kann also nicht versehentlich mit einer Drum-Reihe zu einem 32-Step-Wesen verschmelzen, das nachts durch MIDI-Port 4 streift.
+
+Neue Projekte beginnen bewusst mit acht unabhängigen 16-Step-Ketten. Im Inspector verbindet **MIT NÄCHSTER REIHE VERKETTEN** die gewählte Reihe mit ihrer direkten Nachbarin, sofern beide denselben Typ besitzen. **KETTE TRENNEN** macht alle Reihen der gewählten Kette wieder unabhängig. Bestehende Projektdateien behalten beim Laden ihre Verkettungen; Klaus löst keine Beziehungen hinter dem Rücken der Beteiligten auf.
+
+Beim Umbau bleiben Patterns und Szenenzuordnungen aller unbeteiligten Ketten erhalten. Für die unmittelbar verbundenen oder getrennten Reihen entsteht jeweils ein neues `PATTERN 01` aus dem aktuell sichtbaren musikalischen Zustand.
 
 ### Unabhängige Ketten
 

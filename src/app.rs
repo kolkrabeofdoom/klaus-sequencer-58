@@ -151,7 +151,11 @@ impl KlausApp {
                         pitches.iter().copied().map(NoteEvent::new).collect();
                 }
             }
-            if let Some(chain) = project.chains.get_mut(3) {
+            if let Some(chain) = project
+                .chains
+                .iter_mut()
+                .find(|chain| chain.lane_ids.contains(&4))
+            {
                 chain.route.sound.enabled = true;
                 chain.route.sound.bank_msb = Some(87);
                 chain.route.sound.bank_lsb = Some(0);
@@ -1782,6 +1786,8 @@ impl KlausApp {
                         let mut render_arp = false;
                         let mut switch_pattern = None;
                         let mut send_sound = None;
+                        let mut link_with_next = false;
+                        let mut split_chain = false;
                         let midi_connected = matches!(self.midi_status, MidiStatus::Connected(_));
                         let sound_status = self.sound_status.clone();
                         if let Some(chain_index) = self
@@ -1790,6 +1796,12 @@ impl KlausApp {
                             .iter()
                             .position(|chain| chain.lane_ids.contains(&self.selected_lane))
                         {
+                            let can_link = self
+                                .project
+                                .can_link_lane_with_next(self.selected_lane);
+                            let can_split = self
+                                .project
+                                .can_split_chain_for_lane(self.selected_lane);
                             let active_pattern_name = self
                                 .project
                                 .active_pattern_by_chain
@@ -1828,6 +1840,38 @@ impl KlausApp {
                                 active_pattern_name,
                                 pattern_count
                             ));
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add_enabled(
+                                        can_link,
+                                        egui::Button::new(RichText::new(
+                                            "MIT NÄCHSTER REIHE VERKETTEN",
+                                        ))
+                                        .fill(Color32::from_rgb(24, 72, 74))
+                                        .min_size(egui::vec2(ui.available_width(), 34.0)),
+                                    )
+                                    .on_hover_text(
+                                        "Nur benachbarte Reihen desselben Typs können eine Kette bilden",
+                                    )
+                                    .clicked()
+                                {
+                                    link_with_next = true;
+                                }
+                            });
+                            if ui
+                                .add_enabled(
+                                    can_split,
+                                    egui::Button::new(RichText::new("KETTE TRENNEN"))
+                                        .fill(Color32::from_rgb(82, 47, 28))
+                                        .min_size(egui::vec2(ui.available_width(), 34.0)),
+                                )
+                                .on_hover_text(
+                                    "Alle Reihen dieser Kette wieder als unabhängige 16-Step-Ketten anlegen",
+                                )
+                                .clicked()
+                            {
+                                split_chain = true;
+                            }
                             egui::ComboBox::from_id_salt("chain_pattern")
                                 .selected_text(&active_pattern_name)
                                 .show_ui(ui, |ui| {
@@ -2056,6 +2100,30 @@ impl KlausApp {
 
                         if clear_arp_latch {
                             self.clear_arp_latch();
+                        }
+                        if link_with_next {
+                            self.engine.stop();
+                            self.midi.panic();
+                            self.live_skips.clear();
+                            match self.project.link_lane_with_next(self.selected_lane) {
+                                Ok(()) => {
+                                    self.project.active_scene = None;
+                                    self.save_status = "REIHEN VERKETTET ✓".to_owned();
+                                }
+                                Err(error) => self.save_status = format!("KETTENFEHLER · {error}"),
+                            }
+                        }
+                        if split_chain {
+                            self.engine.stop();
+                            self.midi.panic();
+                            self.live_skips.clear();
+                            match self.project.split_chain_for_lane(self.selected_lane) {
+                                Ok(()) => {
+                                    self.project.active_scene = None;
+                                    self.save_status = "KETTE GETRENNT ✓".to_owned();
+                                }
+                                Err(error) => self.save_status = format!("KETTENFEHLER · {error}"),
+                            }
                         }
                         if let Some(chain_index) = send_sound {
                             self.send_chain_sound(chain_index);
@@ -2420,7 +2488,7 @@ impl KlausApp {
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new("v0.6.1 · PROTOTYPE").color(theme::MUTED));
+                        ui.label(RichText::new("v0.6.2 · PROTOTYPE").color(theme::MUTED));
                     });
                 });
             });

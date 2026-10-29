@@ -1,6 +1,6 @@
 [package]
 name = "klaus-sequencer-58"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 rust-version = "1.89"
 description = "K.L.A.U.S. Sequencer 58 – polyphonic cosmic MIDI step sequencer"

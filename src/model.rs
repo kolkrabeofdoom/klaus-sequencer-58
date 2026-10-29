@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
 pub const LANE_COUNT: usize = 8;
@@ -456,17 +458,16 @@ pub struct Project {
     pub generation_plan: GenerationPlan,
 }
 
+struct ChainTopologySnapshot {
+    chain_ids: Vec<usize>,
+    active_pattern_ids: Vec<Option<usize>>,
+    scene_pattern_ids: Vec<Vec<Option<usize>>>,
+}
+
 impl Project {
     pub fn demo() -> Self {
         let names = [
-            "BASS A",
-            "BASS A · 17–32",
-            "CHORDS",
-            "LEAD",
-            "ARP",
-            "AUX",
-            "DRUM A",
-            "DRUM B",
+            "BASS A", "BASS B", "CHORDS", "LEAD", "ARP", "AUX", "DRUM A", "DRUM B",
         ];
         let patterns: [&[usize]; LANE_COUNT] = [
             &[0, 2, 5, 7, 8, 11, 14],
@@ -479,7 +480,7 @@ impl Project {
             &[2, 6, 8, 12, 15],
         ];
 
-        let lanes = names
+        let lanes: Vec<Lane> = names
             .iter()
             .enumerate()
             .map(|(id, name)| {
@@ -515,95 +516,34 @@ impl Project {
             })
             .collect();
 
-        let chains = vec![
-            Chain {
-                id: 0,
-                name: "BASS A".to_owned(),
-                lane_ids: vec![0, 1],
+        let chains = lanes
+            .iter()
+            .map(|lane| Chain {
+                id: lane.id,
+                name: lane.name.clone(),
+                lane_ids: vec![lane.id],
                 route: MidiRoute {
                     output_name: None,
-                    channel: 3,
+                    channel: if lane.kind == LaneKind::Drums {
+                        10
+                    } else {
+                        (lane.id as u8 + 1).clamp(1, 16)
+                    },
                     sound: MidiSoundTarget::default(),
                 },
                 division: StepDivision::Sixteenth,
-                swing: 0.54,
+                swing: if matches!(lane.id, 0 | 6) { 0.54 } else { 0.5 },
                 direction: Direction::Forward,
-                arpeggiator: ArpeggiatorSettings::default(),
-            },
-            Chain {
-                id: 1,
-                name: "CHORDS".to_owned(),
-                lane_ids: vec![2],
-                route: MidiRoute {
-                    output_name: None,
-                    channel: 6,
-                    sound: MidiSoundTarget::default(),
+                arpeggiator: if lane.id == 4 {
+                    ArpeggiatorSettings {
+                        enabled: true,
+                        ..ArpeggiatorSettings::default()
+                    }
+                } else {
+                    ArpeggiatorSettings::default()
                 },
-                division: StepDivision::Sixteenth,
-                swing: 0.5,
-                direction: Direction::Forward,
-                arpeggiator: ArpeggiatorSettings::default(),
-            },
-            Chain {
-                id: 2,
-                name: "LEAD".to_owned(),
-                lane_ids: vec![3],
-                route: MidiRoute {
-                    output_name: None,
-                    channel: 4,
-                    sound: MidiSoundTarget::default(),
-                },
-                division: StepDivision::Sixteenth,
-                swing: 0.5,
-                direction: Direction::Forward,
-                arpeggiator: ArpeggiatorSettings::default(),
-            },
-            Chain {
-                id: 3,
-                name: "ARP".to_owned(),
-                lane_ids: vec![4],
-                route: MidiRoute {
-                    output_name: None,
-                    channel: 5,
-                    sound: MidiSoundTarget::default(),
-                },
-                division: StepDivision::Sixteenth,
-                swing: 0.5,
-                direction: Direction::Forward,
-                arpeggiator: ArpeggiatorSettings {
-                    enabled: true,
-                    ..ArpeggiatorSettings::default()
-                },
-            },
-            Chain {
-                id: 4,
-                name: "AUX".to_owned(),
-                lane_ids: vec![5],
-                route: MidiRoute {
-                    output_name: None,
-                    channel: 7,
-                    sound: MidiSoundTarget::default(),
-                },
-                division: StepDivision::Sixteenth,
-                swing: 0.5,
-                direction: Direction::Forward,
-                arpeggiator: ArpeggiatorSettings::default(),
-            },
-            Chain {
-                id: 5,
-                name: "DRUMS".to_owned(),
-                lane_ids: vec![6, 7],
-                route: MidiRoute {
-                    output_name: None,
-                    channel: 10,
-                    sound: MidiSoundTarget::default(),
-                },
-                division: StepDivision::Sixteenth,
-                swing: 0.54,
-                direction: Direction::Forward,
-                arpeggiator: ArpeggiatorSettings::default(),
-            },
-        ];
+            })
+            .collect();
 
         let mut project = Self {
             format_version: PROJECT_FORMAT_VERSION,
@@ -660,6 +600,234 @@ impl Project {
             }
         }
         Ok(())
+    }
+
+    pub fn can_link_lane_with_next(&self, lane_id: usize) -> bool {
+        let Some(next_lane_id) = lane_id.checked_add(1) else {
+            return false;
+        };
+        let Some(lane) = self.lanes.get(lane_id) else {
+            return false;
+        };
+        let Some(next_lane) = self.lanes.get(next_lane_id) else {
+            return false;
+        };
+        if lane.kind != next_lane.kind {
+            return false;
+        }
+        let Some(chain) = self
+            .chains
+            .iter()
+            .find(|chain| chain.lane_ids.contains(&lane_id))
+        else {
+            return false;
+        };
+        let Some(next_chain) = self
+            .chains
+            .iter()
+            .find(|chain| chain.lane_ids.contains(&next_lane_id))
+        else {
+            return false;
+        };
+        chain.id != next_chain.id
+            && chain.lane_ids.last() == Some(&lane_id)
+            && next_chain.lane_ids.first() == Some(&next_lane_id)
+    }
+
+    pub fn link_lane_with_next(&mut self, lane_id: usize) -> Result<(), String> {
+        if !self.can_link_lane_with_next(lane_id) {
+            return Err(
+                "Nur benachbarte, getrennte Reihen desselben Typs lassen sich verketten".to_owned(),
+            );
+        }
+        let snapshot = self.chain_topology_snapshot();
+        let left_index = self
+            .chains
+            .iter()
+            .position(|chain| chain.lane_ids.contains(&lane_id))
+            .ok_or_else(|| "Reihe hat keine Kette".to_owned())?;
+        let right_index = self
+            .chains
+            .iter()
+            .position(|chain| chain.lane_ids.contains(&(lane_id + 1)))
+            .ok_or_else(|| "Folgereihe hat keine Kette".to_owned())?;
+        let left_id = self.chains[left_index].id;
+        let right_id = self.chains[right_index].id;
+        let right_lanes = self.chains[right_index].lane_ids.clone();
+        self.chains[left_index].lane_ids.extend(right_lanes);
+        let first_lane = self.chains[left_index].lane_ids[0];
+        let last_lane = *self.chains[left_index]
+            .lane_ids
+            .last()
+            .unwrap_or(&first_lane);
+        self.chains[left_index].name = format!(
+            "{} · {}",
+            self.lanes[first_lane].name, self.lanes[last_lane].name
+        );
+        self.chains.remove(right_index);
+        self.finish_chain_topology_change(snapshot, &[left_id, right_id], &[left_id]);
+        self.validate_chains()
+    }
+
+    pub fn can_split_chain_for_lane(&self, lane_id: usize) -> bool {
+        self.chains
+            .iter()
+            .find(|chain| chain.lane_ids.contains(&lane_id))
+            .is_some_and(|chain| chain.lane_ids.len() > 1)
+    }
+
+    pub fn split_chain_for_lane(&mut self, lane_id: usize) -> Result<(), String> {
+        let chain_index = self
+            .chains
+            .iter()
+            .position(|chain| chain.lane_ids.contains(&lane_id))
+            .ok_or_else(|| "Reihe hat keine Kette".to_owned())?;
+        if self.chains[chain_index].lane_ids.len() <= 1 {
+            return Err("Diese Reihe ist bereits unabhängig".to_owned());
+        }
+        let snapshot = self.chain_topology_snapshot();
+        let original = self.chains.remove(chain_index);
+        let old_id = original.id;
+        let mut next_id = self
+            .chains
+            .iter()
+            .map(|chain| chain.id)
+            .max()
+            .map_or(old_id + 1, |id| id.max(old_id) + 1);
+        let mut new_ids = Vec::with_capacity(original.lane_ids.len());
+        for (offset, lane_id) in original.lane_ids.iter().copied().enumerate() {
+            let mut chain = original.clone();
+            chain.id = if offset == 0 {
+                old_id
+            } else {
+                let id = next_id;
+                next_id += 1;
+                id
+            };
+            chain.name = self.lanes[lane_id].name.clone();
+            chain.lane_ids = vec![lane_id];
+            new_ids.push(chain.id);
+            self.chains.insert(chain_index + offset, chain);
+        }
+        self.finish_chain_topology_change(snapshot, &[old_id], &new_ids);
+        self.validate_chains()
+    }
+
+    fn chain_topology_snapshot(&mut self) -> ChainTopologySnapshot {
+        self.sync_all_active_patterns();
+        let chain_ids = self.chains.iter().map(|chain| chain.id).collect();
+        let active_pattern_ids = self
+            .active_pattern_by_chain
+            .iter()
+            .map(|index| self.patterns.get(*index).map(|pattern| pattern.id))
+            .collect();
+        let scene_pattern_ids = self
+            .scenes
+            .iter()
+            .map(|scene| {
+                scene
+                    .pattern_by_chain
+                    .iter()
+                    .map(|index| self.patterns.get(*index).map(|pattern| pattern.id))
+                    .collect()
+            })
+            .collect();
+        ChainTopologySnapshot {
+            chain_ids,
+            active_pattern_ids,
+            scene_pattern_ids,
+        }
+    }
+
+    fn finish_chain_topology_change(
+        &mut self,
+        snapshot: ChainTopologySnapshot,
+        affected_old_ids: &[usize],
+        affected_new_ids: &[usize],
+    ) {
+        let affected_old: BTreeSet<usize> = affected_old_ids.iter().copied().collect();
+        let affected_new: BTreeSet<usize> = affected_new_ids.iter().copied().collect();
+        self.patterns
+            .retain(|pattern| !affected_old.contains(&pattern.chain_id));
+        let mut next_pattern_id = self
+            .patterns
+            .iter()
+            .map(|pattern| pattern.id)
+            .max()
+            .map_or(0, |id| id + 1);
+        for chain in self
+            .chains
+            .iter()
+            .filter(|chain| affected_new.contains(&chain.id))
+        {
+            let lane_steps = chain
+                .lane_ids
+                .iter()
+                .map(|lane_id| self.lanes[*lane_id].steps.clone())
+                .collect();
+            self.patterns.push(ChainPattern {
+                id: next_pattern_id,
+                chain_id: chain.id,
+                name: "PATTERN 01".to_owned(),
+                lane_steps,
+            });
+            next_pattern_id += 1;
+        }
+
+        self.active_pattern_by_chain = self
+            .chains
+            .iter()
+            .map(|chain| {
+                if affected_new.contains(&chain.id) {
+                    return self
+                        .patterns
+                        .iter()
+                        .position(|pattern| pattern.chain_id == chain.id)
+                        .unwrap_or(0);
+                }
+                let stable_pattern_id = snapshot
+                    .chain_ids
+                    .iter()
+                    .position(|id| *id == chain.id)
+                    .and_then(|index| snapshot.active_pattern_ids.get(index).copied().flatten());
+                stable_pattern_id
+                    .and_then(|id| self.patterns.iter().position(|pattern| pattern.id == id))
+                    .or_else(|| {
+                        self.patterns
+                            .iter()
+                            .position(|pattern| pattern.chain_id == chain.id)
+                    })
+                    .unwrap_or(0)
+            })
+            .collect();
+
+        for (scene_index, scene) in self.scenes.iter_mut().enumerate() {
+            scene.pattern_by_chain = self
+                .chains
+                .iter()
+                .enumerate()
+                .map(|(chain_index, chain)| {
+                    if affected_new.contains(&chain.id) {
+                        return self.active_pattern_by_chain[chain_index];
+                    }
+                    let stable_pattern_id = snapshot
+                        .chain_ids
+                        .iter()
+                        .position(|id| *id == chain.id)
+                        .and_then(|old_chain_index| {
+                            snapshot
+                                .scene_pattern_ids
+                                .get(scene_index)
+                                .and_then(|patterns| patterns.get(old_chain_index))
+                                .copied()
+                                .flatten()
+                        });
+                    stable_pattern_id
+                        .and_then(|id| self.patterns.iter().position(|pattern| pattern.id == id))
+                        .unwrap_or(self.active_pattern_by_chain[chain_index])
+                })
+                .collect();
+        }
     }
 
     pub fn ensure_lane_coverage(&mut self) {

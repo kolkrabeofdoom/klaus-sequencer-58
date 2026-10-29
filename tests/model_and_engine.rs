@@ -5,7 +5,54 @@ use klaus_sequencer_58::model::{GeneratorRole, Project, Step, StepState};
 fn demo_project_has_valid_adjacent_same_type_chains() {
     let project = Project::demo();
     assert_eq!(project.lanes.len(), 8);
+    assert_eq!(project.chains.len(), 8);
+    assert!(project.chains.iter().all(|chain| chain.lane_ids.len() == 1));
     assert!(project.validate_chains().is_ok());
+}
+
+#[test]
+fn adjacent_same_type_rows_can_be_linked_and_split_again() {
+    let mut project = Project::demo();
+    assert!(project.can_link_lane_with_next(0));
+    assert!(!project.can_link_lane_with_next(5));
+    project
+        .link_lane_with_next(0)
+        .expect("link adjacent melody rows");
+    assert_eq!(project.chains.len(), 7);
+    assert_eq!(project.chains[0].lane_ids, vec![0, 1]);
+    assert!(project.can_split_chain_for_lane(1));
+    project
+        .split_chain_for_lane(1)
+        .expect("split linked melody rows");
+    assert_eq!(project.chains.len(), 8);
+    assert_eq!(project.chains[0].lane_ids, vec![0]);
+    assert_eq!(project.chains[1].lane_ids, vec![1]);
+    assert!(project.validate_chains().is_ok());
+}
+
+#[test]
+fn topology_changes_preserve_unaffected_scene_patterns() {
+    let mut project = Project::demo();
+    let unaffected_chain_index = 2;
+    let alternate_steps = vec![vec![Step::active_with_pitch(77); 16]];
+    let alternate = project
+        .add_chain_pattern(
+            unaffected_chain_index,
+            "UNBEIRRT".to_owned(),
+            alternate_steps,
+        )
+        .expect("add unaffected pattern");
+    let scene = project.add_scene("UNBEIRRTE SZENE".to_owned());
+    let alternate_id = project.patterns[alternate].id;
+
+    project.link_lane_with_next(0).expect("link unrelated rows");
+    let shifted_chain_index = project
+        .chains
+        .iter()
+        .position(|chain| chain.lane_ids == vec![2])
+        .expect("unaffected chain remains");
+    let scene_pattern_index = project.scenes[scene].pattern_by_chain[shifted_chain_index];
+    assert_eq!(project.patterns[scene_pattern_index].id, alternate_id);
 }
 
 #[test]
@@ -58,6 +105,9 @@ fn seeded_probability_is_reproducible() {
 #[test]
 fn chain_patterns_can_be_added_activated_and_switched() {
     let mut project = Project::demo();
+    project
+        .link_lane_with_next(0)
+        .expect("prepare a two-row chain");
     assert_eq!(project.patterns.len(), project.chains.len());
     let original_pattern = project.active_pattern_by_chain[0];
     let mut rendered = vec![vec![Step::rest(); 16]; 2];

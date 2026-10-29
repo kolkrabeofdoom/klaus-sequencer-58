@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.2 – Klaus respektiert unabhängige Reihen
+
+- neue Projekte starten mit acht getrennten 16-Step-Ketten statt vorab verknüpfter Reihen 1+2 und 7+8
+- **MIT NÄCHSTER REIHE VERKETTEN** direkt im Ketten-Inspector
+- **KETTE TRENNEN** zerlegt die gewählte Kette wieder in unabhängige 16-Step-Reihen
+- Verkettung bleibt strikt auf benachbarte Reihen desselben Typs begrenzt
+- bestehende Projektdateien behalten ihre vorhandenen Verkettungen
+- nicht betroffene Patterns und Szenenzuordnungen bleiben bei Strukturänderungen erhalten
+- betroffene Ketten erhalten aus ihrem aktuellen musikalischen Zustand ein frisches `PATTERN 01`
+- Transport und hängende MIDI-Noten werden vor Strukturänderungen sicher gestoppt
+
 ## 0.6.1 – Klaus verteilt Klangadressen
 
 - Sound-Ziel pro Kette mit Bank Select MSB (`CC 0`), Bank Select LSB (`CC 32`) und Program Change

@@ -343,7 +343,10 @@ mod tests {
 
     #[test]
     fn chained_rows_play_sequentially_instead_of_in_parallel() {
-        let project = Project::demo();
+        let mut project = Project::demo();
+        project
+            .link_lane_with_next(0)
+            .expect("prepare chained rows");
         let mut engine = PreviewEngine::default();
         engine.toggle();
         let initial = engine.update(&project, &BTreeSet::new(), 0.0);
@@ -370,6 +373,9 @@ mod tests {
     #[test]
     fn reverse_direction_starts_at_the_end_of_a_chain() {
         let mut project = Project::demo();
+        project
+            .link_lane_with_next(0)
+            .expect("prepare chained rows");
         project.chains[0].direction = Direction::Reverse;
         let mut engine = PreviewEngine::default();
         engine.toggle();
