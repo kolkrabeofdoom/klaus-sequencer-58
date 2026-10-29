@@ -335,11 +335,11 @@ impl KlausApp {
 
     fn top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_bar")
-            .exact_height(68.0)
+            .min_height(68.0)
             .frame(egui::Frame::new().fill(Color32::from_rgb(9, 13, 15)))
             .show(ctx, |ui| {
                 ui.add_space(7.0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.add_space(10.0);
                     ui.vertical(|ui| {
                         ui.label(
@@ -455,19 +455,22 @@ impl KlausApp {
                         }
                     });
                 });
+                if ui.min_rect().bottom() > ui.clip_rect().bottom() {
+                    ui.ctx().request_discard("toolbar height changed");
+                }
             });
     }
 
     fn project_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("project_bar")
-            .exact_height(50.0)
+            .min_height(50.0)
             .frame(
                 egui::Frame::new()
                     .fill(Color32::from_rgb(10, 15, 18))
                     .inner_margin(egui::Margin::symmetric(12, 4)),
             )
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if ui.button("ÖFFNEN").clicked() {
                         self.open_project();
                     }
@@ -584,6 +587,9 @@ impl KlausApp {
                         ui.label(RichText::new(file).color(theme::MUTED).size(9.0));
                     });
                 });
+                if ui.min_rect().bottom() > ui.clip_rect().bottom() {
+                    ui.ctx().request_discard("toolbar height changed");
+                }
             });
     }
 
@@ -1658,14 +1664,14 @@ impl KlausApp {
 
     fn scenes_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("scenes_bar")
-            .exact_height(64.0)
+            .min_height(64.0)
             .frame(
                 egui::Frame::new()
                     .fill(Color32::from_rgb(13, 19, 22))
                     .inner_margin(egui::Margin::symmetric(12, 5)),
             )
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new("SCENES").color(theme::CYAN).strong());
                     egui::ComboBox::from_id_salt("scene_quantization")
                         .selected_text(scene_quantization_label(
@@ -1759,19 +1765,22 @@ impl KlausApp {
                         );
                     });
                 });
+                if ui.min_rect().bottom() > ui.clip_rect().bottom() {
+                    ui.ctx().request_discard("toolbar height changed");
+                }
             });
     }
 
     fn midi_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("midi_bar")
-            .exact_height(76.0)
+            .min_height(76.0)
             .frame(
                 egui::Frame::new()
                     .fill(Color32::from_rgb(12, 18, 21))
                     .inner_margin(egui::Margin::symmetric(12, 4)),
             )
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new("MIDI OUT").color(theme::MUTED).size(9.0));
                     let selected_text = self
                         .selected_output
@@ -1843,7 +1852,7 @@ impl KlausApp {
                         ui.label(RichText::new(&self.save_status).color(color).size(9.0));
                     });
                 });
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new("MIDI IN ").color(theme::MUTED).size(9.0));
                     egui::ComboBox::from_id_salt("midi_input")
                         .width(280.0)
@@ -1909,6 +1918,9 @@ impl KlausApp {
                     let (text, color) = midi_status_label(&self.midi_input_status);
                     ui.label(RichText::new(text).color(color).size(9.0));
                 });
+                if ui.min_rect().bottom() > ui.clip_rect().bottom() {
+                    ui.ctx().request_discard("toolbar height changed");
+                }
             });
     }
 
@@ -4126,6 +4138,71 @@ mod tests {
 
     use super::{build_arp_sequence, performance_position_label, quantization_boundary_crossed};
     use crate::model::ArpMode;
+
+    #[test]
+    fn toolbar_panels_reserve_their_touch_control_height() {
+        let ctx = eframe::egui::Context::default();
+        let cc = eframe::CreationContext::_new_kittest(ctx.clone());
+        let mut app = super::KlausApp::new(&cc);
+        // Keep Drop's autosave away from the user's project.
+        let autosave =
+            std::env::temp_dir().join(format!("klaus-layout-test-{}.json", std::process::id()));
+        app.autosave_path = autosave.clone();
+        app.project = crate::model::Project::demo();
+        for width in [1024.0, 1440.0, 1920.0] {
+            for system_theme in [eframe::egui::Theme::Light, eframe::egui::Theme::Dark] {
+                let input = eframe::egui::RawInput {
+                    screen_rect: Some(eframe::egui::Rect::from_min_size(
+                        eframe::egui::Pos2::ZERO,
+                        eframe::egui::vec2(width, 1120.0),
+                    )),
+                    system_theme: Some(system_theme),
+                    ..Default::default()
+                };
+                // Include the first frame and subsequent stabilized frames.
+                for _ in 0..3 {
+                    let output = ctx.run(input.clone(), |ctx| {
+                        app.top_bar(ctx);
+                        app.project_bar(ctx);
+                        app.midi_bar(ctx);
+                        app.scenes_bar(ctx);
+                        let mut bottom = 0.0;
+                        for (id, minimum) in [
+                            ("top_bar", 68.0),
+                            ("project_bar", 52.0),
+                            ("midi_bar", 102.0),
+                            ("scenes_bar", 64.0),
+                        ] {
+                            let rect = eframe::egui::containers::panel::PanelState::load(
+                                ctx,
+                                eframe::egui::Id::new(id),
+                            )
+                            .unwrap()
+                            .rect;
+                            assert!(rect.height() >= minimum, "{id}: {rect:?}");
+                            assert!(rect.top() >= bottom, "overlapping panel {id}");
+                            bottom = rect.bottom();
+                        }
+                        assert!(ctx.available_rect().height() > 0.0);
+                    });
+                    for shape in output.shapes {
+                        if let eframe::egui::epaint::Shape::Rect(rect) = shape.shape
+                            && rect.fill == crate::theme::PANEL_RAISED
+                        {
+                            assert!(
+                                shape.clip_rect.expand(0.5).contains_rect(rect.rect),
+                                "toolbar control clipped at width {width}: {:?} by {:?}",
+                                rect.rect,
+                                shape.clip_rect
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        drop(app);
+        let _ = std::fs::remove_file(autosave);
+    }
 
     #[test]
     fn arpeggio_up_down_avoids_duplicate_turning_notes() {

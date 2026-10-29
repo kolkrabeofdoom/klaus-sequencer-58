@@ -11,6 +11,9 @@ pub const MUTED: Color32 = Color32::from_rgb(132, 145, 153);
 pub const DANGER: Color32 = Color32::from_rgb(255, 100, 92);
 
 pub fn install(ctx: &egui::Context) {
+    // Select the dark style before installing it: set_style only updates the
+    // active theme, and the system preference can otherwise select another one.
+    ctx.set_theme(egui::ThemePreference::Dark);
     let mut visuals = Visuals::dark();
     visuals.panel_fill = GRAPHITE;
     visuals.window_fill = PANEL;
@@ -47,5 +50,49 @@ pub fn lane_color(lane: usize) -> Color32 {
         2 | 3 => VIOLET,
         4 | 5 => Color32::from_rgb(91, 202, 157),
         _ => ORANGE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dark_style_survives_system_theme_changes_at_multiple_scales() {
+        for initial in [egui::Theme::Light, egui::Theme::Dark] {
+            for scale in [1.0, 1.25, 1.5, 2.0] {
+                let ctx = egui::Context::default();
+                let input = |theme| {
+                    let mut input = egui::RawInput {
+                        system_theme: Some(theme),
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1440.0, 900.0) / scale,
+                        )),
+                        ..Default::default()
+                    };
+                    input
+                        .viewports
+                        .get_mut(&egui::ViewportId::ROOT)
+                        .unwrap()
+                        .native_pixels_per_point = Some(scale);
+                    input
+                };
+                let _ = ctx.run(input(initial), |_| {});
+                install(&ctx);
+                for theme in [initial, egui::Theme::Light, egui::Theme::Dark] {
+                    let _ = ctx.run(input(theme), |ctx| {
+                        assert_eq!(ctx.theme(), egui::Theme::Dark);
+                        assert_eq!(ctx.style().visuals.panel_fill, GRAPHITE);
+                        assert_eq!(ctx.style().spacing.button_padding, egui::vec2(12.0, 8.0));
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            let response = ui.button("SPEICHERN");
+                            assert!(response.rect.width() >= 44.0);
+                            assert!(response.rect.height() >= 44.0);
+                        });
+                    });
+                }
+            }
+        }
     }
 }
