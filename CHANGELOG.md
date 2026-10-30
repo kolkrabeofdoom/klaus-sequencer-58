@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.3 – Klaus schafft Platz für mehr Töne
+
+- der untere Piano-Roll-/Stepsequencer-Bereich lässt sich nun tatsächlich in der Höhe verändern
+- bei ausreichender Fensterhöhe sind standardmäßig mindestens vier statt nur zwei Notenreihen sichtbar
+- zusätzlicher Platz wird automatisch für weitere sichtbare Reihen genutzt
+- die Chain Matrix behält beim Vergrößern des Piano-Rolls einen eigenen Mindestbereich
+- Regressionstest für gespeicherte Panelhöhen und den wachsenden sichtbaren Reihenbereich
+
 ## 0.9.2 – Klaus hält alle Reihen in Reichweite
 
 - die mittlere Chain Matrix ist bei niedrigen Fensterhöhen vertikal scrollbar
