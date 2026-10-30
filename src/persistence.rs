@@ -22,6 +22,7 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
     project.ensure_lane_coverage();
     project.ensure_patterns();
     project.ensure_scenes();
+    project.ensure_scene_timeline();
     project.ensure_generation_plan();
     project.ensure_performance_takes();
     project.format_version = PROJECT_FORMAT_VERSION;

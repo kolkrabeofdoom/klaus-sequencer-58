@@ -95,6 +95,11 @@ pub struct KlausApp {
     arp_status: String,
     queued_scene: Option<usize>,
     scene_status: String,
+    scene_timeline_open: bool,
+    selected_scene_timeline_entry: Option<usize>,
+    scene_timeline_playback_active: bool,
+    scene_timeline_entry_index: usize,
+    scene_timeline_status: String,
     transport_pulses: u64,
     clock_accumulator: f64,
     external_clock_pulses: u64,
@@ -307,6 +312,11 @@ impl KlausApp {
             arp_status: "ARP BEREIT".to_owned(),
             queued_scene: None,
             scene_status: "SCENE 01 AKTIV".to_owned(),
+            scene_timeline_open: false,
+            selected_scene_timeline_entry: None,
+            scene_timeline_playback_active: false,
+            scene_timeline_entry_index: 0,
+            scene_timeline_status: "SZENEN-TIMELINE BEREIT".to_owned(),
             transport_pulses: 0,
             clock_accumulator: 0.0,
             external_clock_pulses: 0,
@@ -911,6 +921,201 @@ impl KlausApp {
                 self.generator_status = "ROLLENPROFIL ZURÜCKGESETZT".to_owned();
             }
             None => {}
+        }
+    }
+
+    fn scene_timeline_window(&mut self, ctx: &egui::Context) {
+        if !self.scene_timeline_open {
+            return;
+        }
+        let mut open = self.scene_timeline_open;
+        let entries = self.project.scene_timeline.clone();
+        let active_scene_id = self
+            .project
+            .active_scene
+            .and_then(|index| self.project.scenes.get(index))
+            .map(|scene| scene.id);
+        let mut selected = self.selected_scene_timeline_entry;
+        let mut add_scene = false;
+        let mut play = false;
+        let mut stop = false;
+        let mut move_left = false;
+        let mut move_right = false;
+        let mut duplicate = false;
+        let mut remove = false;
+        let mut timeline_changed = false;
+
+        egui::Window::new("▤ SZENEN-TIMELINE")
+            .open(&mut open)
+            .default_width(900.0)
+            .default_height(360.0)
+            .resizable(true)
+            .frame(egui::Frame::window(&ctx.style()).fill(Color32::from_rgb(8, 13, 17)))
+            .show(ctx, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.heading(RichText::new("SZENENFAHRPLAN").color(theme::CYAN));
+                    ui.label(
+                        RichText::new(format!(
+                            "{} EINTRÄGE · {} TAKTE",
+                            entries.len(),
+                            self.project.scene_timeline_length_pulses() / 96
+                        ))
+                        .color(theme::MUTED),
+                    );
+                    if ui
+                        .add_enabled(active_scene_id.is_some(), egui::Button::new("+ AKTIVE SZENE"))
+                        .clicked()
+                    {
+                        add_scene = true;
+                    }
+                    if ui
+                        .add_enabled(!entries.is_empty(), egui::Button::new("▶ TIMELINE"))
+                        .clicked()
+                    {
+                        play = true;
+                    }
+                    if ui
+                        .add_enabled(
+                            self.scene_timeline_playback_active,
+                            egui::Button::new("■ STOPP"),
+                        )
+                        .clicked()
+                    {
+                        stop = true;
+                    }
+                });
+                ui.label(
+                    RichText::new(
+                        "Szenen werden von links nach rechts abgespielt; jeder Abschnitt hält die Szene für seine Taktlänge.",
+                    )
+                    .color(theme::MUTED),
+                );
+                ui.separator();
+
+                egui::ScrollArea::horizontal()
+                    .id_salt("scene_timeline_entries")
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            for (index, entry) in entries.iter().enumerate() {
+                                let scene_name = self
+                                    .project
+                                    .scenes
+                                    .iter()
+                                    .find(|scene| scene.id == entry.scene_id)
+                                    .map_or("UNBEKANNTE SZENE", |scene| scene.name.as_str());
+                                let playing = self.scene_timeline_playback_active
+                                    && self.scene_timeline_entry_index == index;
+                                let label = format!(
+                                    "{:02} · {}\n{} TAKTE{}",
+                                    index + 1,
+                                    scene_name,
+                                    entry.bars,
+                                    if playing { " · LÄUFT" } else { "" }
+                                );
+                                let response = ui.add_sized(
+                                    [165.0, 70.0],
+                                    egui::Button::new(label).fill(if playing {
+                                        Color32::from_rgb(35, 95, 89)
+                                    } else if selected == Some(index) {
+                                        Color32::from_rgb(79, 54, 104)
+                                    } else {
+                                        theme::PANEL_RAISED
+                                    }),
+                                );
+                                if response.clicked() {
+                                    selected = Some(index);
+                                }
+                            }
+                        });
+                    });
+                ui.separator();
+
+                if let Some(index) = selected
+                    && let Some(entry) = self.project.scene_timeline.get_mut(index)
+                {
+                    let scene_name = self
+                        .project
+                        .scenes
+                        .iter()
+                        .find(|scene| scene.id == entry.scene_id)
+                        .map_or("UNBEKANNTE SZENE", |scene| scene.name.as_str());
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new(scene_name).color(theme::CYAN).strong());
+                        ui.label("TAKTE");
+                        timeline_changed = ui
+                            .add(egui::DragValue::new(&mut entry.bars).range(1..=256))
+                            .changed();
+                        if ui.button("←").clicked() {
+                            move_left = true;
+                        }
+                        if ui.button("→").clicked() {
+                            move_right = true;
+                        }
+                        if ui.button("⧉ DUPLIZIEREN").clicked() {
+                            duplicate = true;
+                        }
+                        if ui.button("× LÖSCHEN").clicked() {
+                            remove = true;
+                        }
+                    });
+                } else {
+                    ui.label(
+                        RichText::new("EINEN ABSCHNITT AUSWÄHLEN ODER DIE AKTIVE SZENE HINZUFÜGEN")
+                            .color(theme::MUTED),
+                    );
+                }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(
+                        RichText::new(&self.scene_timeline_status)
+                            .color(theme::MUTED)
+                            .size(9.0),
+                    );
+                });
+            });
+
+        self.scene_timeline_open = open;
+        self.selected_scene_timeline_entry = selected;
+        if add_scene && let Some(scene_id) = active_scene_id {
+            match self.project.add_scene_timeline_entry(scene_id) {
+                Ok(index) => {
+                    self.selected_scene_timeline_entry = Some(index);
+                    self.scene_timeline_status = "SZENE ZUR TIMELINE HINZUGEFÜGT".to_owned();
+                }
+                Err(error) => self.scene_timeline_status = format!("TIMELINE-FEHLER · {error}"),
+            }
+        }
+        if let Some(index) = self.selected_scene_timeline_entry {
+            if move_left && index > 0 {
+                self.project.scene_timeline.swap(index, index - 1);
+                self.selected_scene_timeline_entry = Some(index - 1);
+                timeline_changed = true;
+            } else if move_right && index + 1 < self.project.scene_timeline.len() {
+                self.project.scene_timeline.swap(index, index + 1);
+                self.selected_scene_timeline_entry = Some(index + 1);
+                timeline_changed = true;
+            } else if duplicate {
+                match self.project.duplicate_scene_timeline_entry(index) {
+                    Ok(copy) => self.selected_scene_timeline_entry = Some(copy),
+                    Err(error) => self.scene_timeline_status = format!("TIMELINE-FEHLER · {error}"),
+                }
+                timeline_changed = true;
+            } else if remove && index < self.project.scene_timeline.len() {
+                self.project.scene_timeline.remove(index);
+                self.selected_scene_timeline_entry = (!self.project.scene_timeline.is_empty())
+                    .then_some(index.min(self.project.scene_timeline.len() - 1));
+                timeline_changed = true;
+            }
+        }
+        if timeline_changed && self.scene_timeline_playback_active {
+            self.stop_transport();
+            self.scene_timeline_status = "TIMELINE GEÄNDERT · WIEDERGABE GESTOPPT".to_owned();
+        }
+        if play {
+            self.start_scene_timeline_playback();
+        }
+        if stop {
+            self.stop_transport();
+            self.scene_timeline_status = "SZENEN-TIMELINE GESTOPPT".to_owned();
         }
     }
 
@@ -1707,6 +1912,9 @@ impl KlausApp {
                         self.scene_status = format!("{name} ANGELEGT");
                         self.project.active_scene = Some(index);
                     }
+                    if ui.button("▤ TIMELINE").clicked() {
+                        self.scene_timeline_open = true;
+                    }
                     if ui
                         .add_enabled(
                             self.project.active_scene.is_some(),
@@ -2100,6 +2308,8 @@ impl KlausApp {
                 self.selected_lane = self.selected_lane.min(self.project.lanes.len() - 1);
                 self.selected_step = self.selected_step.min(STEPS_PER_LANE - 1);
                 self.queued_scene = None;
+                self.scene_timeline_playback_active = false;
+                self.selected_scene_timeline_entry = None;
                 self.performance_capture_active = false;
                 self.performance_playback_active = false;
                 self.performance_playback_cursor = 0;
@@ -2280,6 +2490,65 @@ impl KlausApp {
         self.song_clip_index = 0;
         self.apply_song_clip(0);
         self.engine.start();
+    }
+
+    fn apply_scene_timeline_entry(&mut self, entry_index: usize) {
+        let Some(entry) = self.project.scene_timeline.get(entry_index).cloned() else {
+            return;
+        };
+        let Some(scene_index) = self
+            .project
+            .scenes
+            .iter()
+            .position(|scene| scene.id == entry.scene_id)
+        else {
+            self.scene_timeline_status = "TIMELINE-FEHLER · SZENE FEHLT".to_owned();
+            return;
+        };
+        self.apply_scene_now(scene_index);
+        let name = self.project.scenes[scene_index].name.clone();
+        self.scene_timeline_status = format!(
+            "ABSCHNITT {:02} · {name} · {} TAKTE",
+            entry_index + 1,
+            entry.bars
+        );
+    }
+
+    fn start_scene_timeline_playback(&mut self) {
+        if self.project.scene_timeline.is_empty() {
+            self.scene_timeline_status = "KEINE SZENEN IN DER TIMELINE".to_owned();
+            return;
+        }
+        self.stop_transport();
+        self.transport_pulses = 0;
+        self.scene_timeline_playback_active = true;
+        self.scene_timeline_entry_index = 0;
+        self.apply_scene_timeline_entry(0);
+        self.engine.start();
+    }
+
+    fn update_scene_timeline_playback(&mut self, current: u64) {
+        if !self.scene_timeline_playback_active {
+            return;
+        }
+        if current >= self.project.scene_timeline_length_pulses() {
+            self.scene_timeline_status = "SZENEN-TIMELINE ABGESCHLOSSEN".to_owned();
+            self.stop_transport();
+            return;
+        }
+        let mut start = 0;
+        let mut found = 0;
+        for (index, entry) in self.project.scene_timeline.iter().enumerate() {
+            if current < start + entry.total_pulses() {
+                found = index;
+                break;
+            }
+            start += entry.total_pulses();
+        }
+        if found != self.scene_timeline_entry_index {
+            self.scene_timeline_entry_index = found;
+            self.apply_scene_timeline_entry(found);
+        }
     }
 
     fn update_song_playback(&mut self, previous: u64, current: u64) {
@@ -2498,6 +2767,7 @@ impl KlausApp {
                 self.maybe_launch_queued_scene(previous, self.transport_pulses);
                 self.apply_performance_events_through(self.transport_pulses);
                 self.update_song_playback(previous, self.transport_pulses);
+                self.update_scene_timeline_playback(self.transport_pulses);
                 f64::from(pulses as u32) * 60.0 / (f64::from(self.project.bpm) * 24.0)
             }
             MidiClockMode::Internal | MidiClockMode::Master => {
@@ -2516,6 +2786,7 @@ impl KlausApp {
                 self.maybe_launch_queued_scene(previous, self.transport_pulses);
                 self.apply_performance_events_through(self.transport_pulses);
                 self.update_song_playback(previous, self.transport_pulses);
+                self.update_scene_timeline_playback(self.transport_pulses);
                 delta_seconds
             }
         }
@@ -2550,6 +2821,7 @@ impl KlausApp {
         self.performance_capture_active = false;
         self.performance_playback_active = false;
         self.song_playback_active = false;
+        self.scene_timeline_playback_active = false;
         self.performance_playback_cursor = 0;
         if self.project.midi_clock_mode == MidiClockMode::Master {
             self.midi.schedule_realtime(Instant::now(), 0xFC);
@@ -4035,6 +4307,7 @@ impl eframe::App for KlausApp {
         self.piano_roll_window(ctx);
         self.generator_window(ctx);
         self.performance_window(ctx);
+        self.scene_timeline_window(ctx);
         self.composer_window(ctx);
         self.about_window(ctx);
     }
@@ -4559,6 +4832,47 @@ mod tests {
             viewport_height >= windowed_viewport_height + 200.0,
             "fullscreen did not enlarge the editing area: windowed={windowed_viewport_height}, fullscreen={viewport_height}"
         );
+
+        drop(app);
+        let _ = std::fs::remove_file(autosave);
+    }
+
+    #[test]
+    fn scene_timeline_switches_at_bar_boundaries_and_stops_at_the_end() {
+        let ctx = eframe::egui::Context::default();
+        let cc = eframe::CreationContext::_new_kittest(ctx);
+        let mut app = super::KlausApp::new(&cc);
+        let autosave = std::env::temp_dir().join(format!(
+            "klaus-scene-timeline-test-{}.json",
+            std::process::id()
+        ));
+        app.autosave_path = autosave.clone();
+        app.project = crate::model::Project::demo();
+        let first_scene_id = app.project.scenes[0].id;
+        let second_scene = app.project.duplicate_scene(0).expect("duplicate scene");
+        let second_scene_id = app.project.scenes[second_scene].id;
+        let first = app
+            .project
+            .add_scene_timeline_entry(first_scene_id)
+            .expect("add first scene");
+        let second = app
+            .project
+            .add_scene_timeline_entry(second_scene_id)
+            .expect("add second scene");
+        app.project.scene_timeline[first].bars = 1;
+        app.project.scene_timeline[second].bars = 1;
+
+        app.start_scene_timeline_playback();
+        assert_eq!(app.project.active_scene, Some(0));
+        assert!(app.scene_timeline_playback_active);
+
+        app.update_scene_timeline_playback(96);
+        assert_eq!(app.project.active_scene, Some(1));
+        assert_eq!(app.scene_timeline_entry_index, 1);
+
+        app.update_scene_timeline_playback(192);
+        assert!(!app.scene_timeline_playback_active);
+        assert!(!app.engine.playing);
 
         drop(app);
         let _ = std::fs::remove_file(autosave);

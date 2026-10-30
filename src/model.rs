@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const LANE_COUNT: usize = 8;
 pub const STEPS_PER_LANE: usize = 16;
-pub const PROJECT_FORMAT_VERSION: u32 = 7;
+pub const PROJECT_FORMAT_VERSION: u32 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LaneKind {
@@ -409,6 +409,19 @@ pub struct Scene {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneTimelineEntry {
+    pub id: usize,
+    pub scene_id: usize,
+    pub bars: u16,
+}
+
+impl SceneTimelineEntry {
+    pub fn total_pulses(&self) -> u64 {
+        u64::from(self.bars.max(1)) * 96
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PerformanceAction {
     SceneLaunch {
         scene_id: usize,
@@ -496,6 +509,8 @@ pub struct Project {
     pub scenes: Vec<Scene>,
     #[serde(default)]
     pub active_scene: Option<usize>,
+    #[serde(default)]
+    pub scene_timeline: Vec<SceneTimelineEntry>,
     #[serde(default)]
     pub scene_launch_quantization: SceneLaunchQuantization,
     #[serde(default)]
@@ -610,6 +625,7 @@ impl Project {
             active_pattern_by_chain: Vec::new(),
             scenes: Vec::new(),
             active_scene: None,
+            scene_timeline: Vec::new(),
             scene_launch_quantization: SceneLaunchQuantization::default(),
             midi_clock_mode: MidiClockMode::default(),
             performance_timeline: Vec::new(),
@@ -748,6 +764,63 @@ impl Project {
 
     pub fn song_length_pulses(&self) -> u64 {
         self.song_clips.iter().map(SongClip::total_pulses).sum()
+    }
+
+    pub fn add_scene_timeline_entry(&mut self, scene_id: usize) -> Result<usize, String> {
+        if !self.scenes.iter().any(|scene| scene.id == scene_id) {
+            return Err("Unbekannte Szene".to_owned());
+        }
+        let id = self
+            .scene_timeline
+            .iter()
+            .map(|entry| entry.id)
+            .max()
+            .map_or(0, |id| id + 1);
+        self.scene_timeline.push(SceneTimelineEntry {
+            id,
+            scene_id,
+            bars: 4,
+        });
+        Ok(self.scene_timeline.len() - 1)
+    }
+
+    pub fn scene_timeline_length_pulses(&self) -> u64 {
+        self.scene_timeline
+            .iter()
+            .map(SceneTimelineEntry::total_pulses)
+            .sum()
+    }
+
+    pub fn duplicate_scene_timeline_entry(&mut self, entry_index: usize) -> Result<usize, String> {
+        let source = self
+            .scene_timeline
+            .get(entry_index)
+            .ok_or_else(|| "Unbekannter Timeline-Eintrag".to_owned())?
+            .clone();
+        let id = self
+            .scene_timeline
+            .iter()
+            .map(|entry| entry.id)
+            .max()
+            .map_or(0, |id| id + 1);
+        let new_index = entry_index + 1;
+        self.scene_timeline.insert(
+            new_index,
+            SceneTimelineEntry {
+                id,
+                scene_id: source.scene_id,
+                bars: source.bars,
+            },
+        );
+        Ok(new_index)
+    }
+
+    pub fn ensure_scene_timeline(&mut self) {
+        self.scene_timeline
+            .retain(|entry| self.scenes.iter().any(|scene| scene.id == entry.scene_id));
+        for entry in &mut self.scene_timeline {
+            entry.bars = entry.bars.max(1);
+        }
     }
 
     pub fn validate_chains(&self) -> Result<(), String> {
@@ -1226,6 +1299,13 @@ impl Project {
             |clip| matches!(clip.source, SongClipSource::Scene { scene_id: id } if id == scene_id),
         ) {
             return Err("Szene wird im Composer verwendet".to_owned());
+        }
+        if self
+            .scene_timeline
+            .iter()
+            .any(|entry| entry.scene_id == scene_id)
+        {
+            return Err("Szene wird in der Szenen-Timeline verwendet".to_owned());
         }
 
         let previous_active = self.active_scene;
