@@ -8,7 +8,7 @@ Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in 
 > „Warum nur einen? Alle brauchen zwei 303s.“  
 > — Klaus, vermutlich während einer völlig sachlichen Budgetbesprechung
 
-[![Version](https://img.shields.io/badge/version-0.9.3-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
+[![Version](https://img.shields.io/badge/version-0.9.4-orange)](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.89%2B-cyan)](https://www.rust-lang.org/)
 [![Plattform](https://img.shields.io/badge/platform-Windows-57d2d2)](#systemanforderungen)
 [![Lizenz](https://img.shields.io/badge/license-AGPL--3.0--or--later-9d69e3)](#lizenz)
@@ -18,6 +18,7 @@ Ein touchorientierter, polyphoner MIDI-Stepsequencer für Windows – gebaut in 
 
 - [Was ist K.L.A.U.S.?](#was-ist-klaus)
 - [Projektstatus](#projektstatus)
+- [Neu in v0.9.4](#neu-in-v094)
 - [Download und Start](#download-und-start)
 - [Das Instrument](#das-instrument)
 - [Bedienkonzept](#bedienkonzept)
@@ -61,12 +62,24 @@ K.L.A.U.S. ist ein funktionierender **v0.9-Prototyp**. MIDI-Ein- und -Ausgabe, T
 
 Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetriebssystem für eine Marsmission. Vor einem Konzert sollte mensch das Setup mit dem eigenen MIDI-Interface und den verwendeten Instrumenten testen.
 
+## Neu in v0.9.4
+
+`v0.9.4` baut die Arbeit mit Noten und Szenen deutlich aus:
+
+- **Großer Piano-Roll-Arbeitsbereich:** **GROSS ÖFFNEN** löst den unteren Editor aus der geteilten Hauptansicht. Der neue Arbeitsbereich ist frei skalierbar, wechselt direkt zwischen allen acht Reihen und lässt sich innerhalb der App maximieren. **FENSTER** stellt die vorherige Größe wieder her.
+- **Sichere Szenenverwaltung:** Szenen lassen sich direkt in der Szenenleiste duplizieren und löschen. Die letzte Szene sowie Szenen mit Referenzen aus Performance-Takes, Composer-Clips oder der Szenen-Timeline sind vor versehentlichem Löschen geschützt.
+- **Persistente Szenen-Timeline:** **TIMELINE** öffnet einen kompakten Szenenfahrplan. Abschnitte besitzen 1 bis 256 Takte, können verschoben und dupliziert werden und wechseln bei der Wiedergabe automatisch an exakten Taktgrenzen.
+- **Projektformat 8:** Der Szenenfahrplan wird in Projektdatei und Autosave gespeichert. Ältere Projekte werden beim Laden ergänzt; vorhandene Patterns, Takes und Composer-Clips bleiben erhalten.
+
+Die Oberfläche bleibt unabhängig vom Windows-Hell-/Dunkelmodus im eigenen Dark Theme. Touch-Ziele und scrollbare Arbeitsbereiche wurden auch für kleinere Fenster und unterschiedliche Skalierungen beibehalten.
+
 ### Bereits implementiert
 
 - 8 Reihen mit jeweils 16 Steps
 - sechs Melodie- und zwei Drum-Reihen
 - polyphone Steps mit beliebig mehreren MIDI-Noten
 - Melodie- und Drum-Piano-Roll
+- großer, skalierbarer Piano-Roll-Arbeitsbereich mit Reihenwechsel und Vollbildmodus
 - Step-Zustände **Active**, **Rest** und **Skip**
 - Probability pro Step
 - 1–8 Ratchets pro Step
@@ -85,6 +98,7 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 - Live-Arpeggiator inklusive Latch und Arp-Ratchets
 - mehrere Kettenpatterns mit sicherem Patternwechsel
 - Szenen für gemeinsame Patternwechsel über alle Ketten, inklusive Duplizieren und sicherem Löschen
+- persistente Szenen-Timeline mit Taktlängen, Reihenfolge und direkter Wiedergabe
 - quantisierte Szenenstarts: sofort, nächster Step, Beat oder Takt
 - MIDI-Clock als Internal, Master oder Follower
 - MIDI Start, Continue und Stop
@@ -101,6 +115,7 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 - mehrere benannte Takes mit Duplizieren, Umbenennen und sicherem Löschen
 - grafisch und per Touch verschiebbare Timeline-Ereignisse
 - gespeicherte Wiederholungsblöcke mit zwei bis sechzehn Durchläufen
+- Composer mit linearen Take- und Szenenclips, Übergängen und MIDI-Export
 
 ### Bewusst noch nicht fertig
 
@@ -113,7 +128,7 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 
 Die aktuelle Windows-Version befindet sich unter [Releases](https://github.com/kolkrabeofdoom/klaus-sequencer-58/releases).
 
-1. `KLAUS-Sequencer-58-v0.9.3.exe` herunterladen.
+1. `KLAUS-Sequencer-58-v0.9.4.exe` herunterladen.
 2. Anwendung starten.
 3. MIDI-Ausgang und optional MIDI-Eingang auswählen.
 4. Gerät verbinden.
@@ -504,7 +519,7 @@ Die Tests decken unter anderem Kettenvalidierung, Skip-Zyklen, Laufrichtungen, r
 
 ## Projektdateien und Autosave
 
-Der Projektzustand ist versioniert und wird als JSON serialisiert. Autosaves werden atomisch geschrieben: Eine temporäre Datei wird erst nach erfolgreichem Schreiben aktiviert; vorhandene Daten erhalten währenddessen eine Sicherung.
+Der Projektzustand ist versioniert und wird als JSON serialisiert. `v0.9.4` schreibt Projektformat 8; neu darin ist die persistente Szenen-Timeline. Ältere Projektdateien werden beim Öffnen automatisch auf den aktuellen Stand ergänzt. Autosaves werden atomisch geschrieben: Eine temporäre Datei wird erst nach erfolgreichem Schreiben aktiviert; vorhandene Daten erhalten währenddessen eine Sicherung.
 
 Standardpfad unter Windows:
 
