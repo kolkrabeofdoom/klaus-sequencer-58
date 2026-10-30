@@ -106,7 +106,6 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 
 - parallele Automationsspuren und Abschnittsmarker im Composer
 - Import vorhandener MIDI-Dateien
-- Vollbild-Piano-Roll
 - VST3-, CLAP- und LV2-Adapter
 - bedingte Trigger; im Datenmodell vorgesehen, noch nicht in der Oberfläche
 
@@ -342,7 +341,7 @@ Ein einzelner Step kann mehrere Noten tragen. Damit sind Akkorde, Cluster, Oktav
 
 Auch Drum-Reihen besitzen ein Piano-Roll. Externe Drumcomputer lassen sich dadurch vollständig über MIDI-Notennummern programmieren, statt auf eine einzige fest verdrahtete Note pro Reihe reduziert zu werden.
 
-Die aktuelle Ansicht ist geteilt; ein optionaler Vollbildmodus ist vorgesehen.
+Die kompakte geteilte Ansicht lässt sich mit **GROSS ÖFFNEN** in einen frei skalierbaren Arbeitsbereich überführen. Dort kann direkt zwischen allen acht Reihen gewechselt werden. **VOLLBILD** nutzt die gesamte App-Fläche; **FENSTER** stellt anschließend die vorherige Größe wieder her. Beide Ansichten bearbeiten dasselbe Notenraster und unterstützen Touch, Mausklick und vertikales Scrollen.
 
 ## Klaus-Lore
 
@@ -402,6 +401,7 @@ Die verbindlichen visuellen Referenzen sind [`assets/klaussequencer58-character-
 | Bank/Program Change | ✅ | benannte Geräteprofile | gerätespezifische Patch-Bibliotheken |
 | MIDI-Clock | ✅ | Clock-Offset und Diagnose | Ableton Link prüfen |
 | Polyphone Steps | ✅ | komfortablere Auswahl | MPE-Prüfung |
+| Piano-Roll | geteilt/groß/Vollbild ✅ | komfortablere Auswahl | Ausdruckswerkzeuge |
 | Probability/Ratchets | ✅ | Modulation | bedingte Trigger |
 | Live-Arpeggiator | ✅ | Presets | komplexere Arp-Transformationen |
 | Kreativer Generator | Reihe ✅ | ganze Szene | szenenübergreifende Dramaturgie |

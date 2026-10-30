@@ -117,6 +117,9 @@ pub struct KlausApp {
     performance_status: String,
     composer_open: bool,
     composer_fullscreen: bool,
+    piano_roll_window_open: bool,
+    piano_roll_fullscreen: bool,
+    piano_roll_restore_rect: Option<egui::Rect>,
     selected_song_clip: Option<usize>,
     song_playback_active: bool,
     song_clip_index: usize,
@@ -330,6 +333,9 @@ impl KlausApp {
             performance_status: "PERFORMANCE-TAKE BEREIT".to_owned(),
             composer_open: composer_capture,
             composer_fullscreen: false,
+            piano_roll_window_open: false,
+            piano_roll_fullscreen: false,
+            piano_roll_restore_rect: None,
             selected_song_clip: composer_capture.then_some(1),
             song_playback_active: false,
             song_clip_index: 0,
@@ -3445,8 +3451,6 @@ impl KlausApp {
             )
             .show(ctx, |ui| {
                 let lane_kind = self.project.lanes[self.selected_lane].kind;
-                let generator_config =
-                    &self.project.generation_plan.lane_configs[self.selected_lane];
                 let scale_text = format!(
                     "{} {} · SCALE FOLD",
                     root_name(self.project.generation_plan.root),
@@ -3463,90 +3467,197 @@ impl KlausApp {
                     );
                     ui.label(RichText::new(scale_text).color(theme::MUTED));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            RichText::new("GETEILT · FULLSCREEN SPÄTER")
-                                .size(9.0)
-                                .color(theme::MUTED),
-                        );
+                        if ui.button("□ GROSS ÖFFNEN").clicked() {
+                            self.piano_roll_window_open = true;
+                        }
                     });
                 });
                 ui.separator();
-
-                let (base_pitch, row_count) = if lane_kind == LaneKind::Drums {
-                    (36, 8_usize)
-                } else {
-                    let note_minimum = self.project.lanes[self.selected_lane]
-                        .steps
-                        .iter()
-                        .flat_map(|step| step.notes.iter().map(|note| note.pitch))
-                        .min();
-                    let note_maximum = self.project.lanes[self.selected_lane]
-                        .steps
-                        .iter()
-                        .flat_map(|step| step.notes.iter().map(|note| note.pitch))
-                        .max();
-                    let (minimum, desired_maximum) = match (note_minimum, note_maximum) {
-                        (Some(minimum), Some(maximum)) => {
-                            (minimum.saturating_sub(2), maximum.saturating_add(2))
-                        }
-                        _ => (generator_config.min_pitch, generator_config.max_pitch),
-                    };
-                    let minimum = minimum.min(116);
-                    let maximum = desired_maximum
-                        .max(minimum.saturating_add(11))
-                        .min(minimum.saturating_add(23))
-                        .min(127);
-                    (
-                        minimum,
-                        usize::from(maximum.saturating_sub(minimum) + 1).max(12),
-                    )
-                };
-                let cell_width =
-                    ((ui.available_width() - 72.0) / STEPS_PER_LANE as f32 - 3.0).clamp(22.0, 44.0);
-                let rows = egui::ScrollArea::vertical().show(ui, |ui| {
-                    for row in (0..row_count).rev() {
-                        let pitch = base_pitch + row as u8;
-                        ui.horizontal(|ui| {
-                            ui.add_sized(
-                                [62.0, 24.0],
-                                egui::Label::new(
-                                    RichText::new(note_name(pitch, lane_kind)).color(theme::MUTED),
-                                ),
-                            );
-                            for step_index in 0..STEPS_PER_LANE {
-                                let has_note = self.project.lanes[self.selected_lane].steps
-                                    [step_index]
-                                    .notes
-                                    .iter()
-                                    .any(|note| note.pitch == pitch);
-                                let selected = step_index == self.selected_step;
-                                let fill = if has_note {
-                                    theme::lane_color(self.selected_lane)
-                                } else if selected {
-                                    Color32::from_rgb(38, 49, 53)
-                                } else {
-                                    Color32::from_rgb(20, 27, 30)
-                                };
-                                let response = ui.add_sized(
-                                    [cell_width, 24.0],
-                                    egui::Button::new("").fill(fill).stroke(if selected {
-                                        Stroke::new(1.0_f32, Color32::WHITE)
-                                    } else {
-                                        Stroke::new(1.0_f32, Color32::from_rgb(46, 57, 62))
-                                    }),
-                                );
-                                if response.clicked() {
-                                    self.selected_step = step_index;
-                                    self.project.lanes[self.selected_lane].steps[step_index]
-                                        .toggle_note(pitch);
-                                }
-                            }
-                        });
-                    }
-                });
-                rows.inner_rect.height()
+                self.piano_roll_grid(ui, "piano_roll_panel_rows")
             });
         (panel.response.rect.height(), panel.inner)
+    }
+
+    fn piano_roll_grid(&mut self, ui: &mut egui::Ui, scroll_id: &'static str) -> f32 {
+        let lane_kind = self.project.lanes[self.selected_lane].kind;
+        let generator_config = &self.project.generation_plan.lane_configs[self.selected_lane];
+        let (base_pitch, row_count) = if lane_kind == LaneKind::Drums {
+            (36, 8_usize)
+        } else {
+            let note_minimum = self.project.lanes[self.selected_lane]
+                .steps
+                .iter()
+                .flat_map(|step| step.notes.iter().map(|note| note.pitch))
+                .min();
+            let note_maximum = self.project.lanes[self.selected_lane]
+                .steps
+                .iter()
+                .flat_map(|step| step.notes.iter().map(|note| note.pitch))
+                .max();
+            let (minimum, desired_maximum) = match (note_minimum, note_maximum) {
+                (Some(minimum), Some(maximum)) => {
+                    (minimum.saturating_sub(2), maximum.saturating_add(2))
+                }
+                _ => (generator_config.min_pitch, generator_config.max_pitch),
+            };
+            let minimum = minimum.min(116);
+            let maximum = desired_maximum
+                .max(minimum.saturating_add(11))
+                .min(minimum.saturating_add(23))
+                .min(127);
+            (
+                minimum,
+                usize::from(maximum.saturating_sub(minimum) + 1).max(12),
+            )
+        };
+        let cell_width =
+            ((ui.available_width() - 72.0) / STEPS_PER_LANE as f32 - 3.0).clamp(22.0, 44.0);
+        let rows = egui::ScrollArea::vertical()
+            .id_salt(scroll_id)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for row in (0..row_count).rev() {
+                    let pitch = base_pitch + row as u8;
+                    ui.horizontal(|ui| {
+                        ui.add_sized(
+                            [62.0, 24.0],
+                            egui::Label::new(
+                                RichText::new(note_name(pitch, lane_kind)).color(theme::MUTED),
+                            ),
+                        );
+                        for step_index in 0..STEPS_PER_LANE {
+                            let has_note = self.project.lanes[self.selected_lane].steps[step_index]
+                                .notes
+                                .iter()
+                                .any(|note| note.pitch == pitch);
+                            let selected = step_index == self.selected_step;
+                            let fill = if has_note {
+                                theme::lane_color(self.selected_lane)
+                            } else if selected {
+                                Color32::from_rgb(38, 49, 53)
+                            } else {
+                                Color32::from_rgb(20, 27, 30)
+                            };
+                            let response = ui.add_sized(
+                                [cell_width, 24.0],
+                                egui::Button::new("").fill(fill).stroke(if selected {
+                                    Stroke::new(1.0_f32, Color32::WHITE)
+                                } else {
+                                    Stroke::new(1.0_f32, Color32::from_rgb(46, 57, 62))
+                                }),
+                            );
+                            if response.clicked() {
+                                self.selected_step = step_index;
+                                self.project.lanes[self.selected_lane].steps[step_index]
+                                    .toggle_note(pitch);
+                            }
+                        }
+                    });
+                }
+            });
+        rows.inner_rect.height()
+    }
+
+    fn piano_roll_window(&mut self, ctx: &egui::Context) -> Option<f32> {
+        if !self.piano_roll_window_open {
+            return None;
+        }
+        let mut open = self.piano_roll_window_open;
+        let lane_options: Vec<(usize, String)> = self
+            .project
+            .lanes
+            .iter()
+            .enumerate()
+            .map(|(index, lane)| (index, format!("{} · {}", index + 1, lane.name)))
+            .collect();
+        let lane_kind = self.project.lanes[self.selected_lane].kind;
+        let scale_text = format!(
+            "{} {} · SCALE FOLD",
+            root_name(self.project.generation_plan.root),
+            scale_label(self.project.generation_plan.scale)
+        );
+        let restore_rect = if self.piano_roll_fullscreen {
+            None
+        } else {
+            self.piano_roll_restore_rect.take()
+        };
+        let mut window = egui::Window::new("▦ PIANO-ROLL-ARBEITSBEREICH")
+            .open(&mut open)
+            .default_width(1180.0)
+            .default_height(720.0)
+            .min_width(760.0)
+            .min_height(420.0)
+            .resizable(true)
+            .frame(egui::Frame::window(&ctx.style()).fill(Color32::from_rgb(8, 13, 16)));
+        if self.piano_roll_fullscreen {
+            window = window.fixed_rect(ctx.screen_rect().shrink(8.0));
+        } else if let Some(rect) = restore_rect {
+            window = window.fixed_rect(rect);
+        }
+        let response = window.show(ctx, |ui| {
+            let mut toggle_fullscreen = false;
+            ui.horizontal(|ui| {
+                ui.heading(
+                    RichText::new(if lane_kind == LaneKind::Drums {
+                        "DRUM PIANO ROLL"
+                    } else {
+                        "PIANO ROLL"
+                    })
+                    .color(theme::CYAN),
+                );
+                egui::ComboBox::from_id_salt("piano_roll_workspace_lane")
+                    .selected_text(
+                        lane_options
+                            .get(self.selected_lane)
+                            .map_or("REIHE", |(_, name)| name.as_str()),
+                    )
+                    .show_ui(ui, |ui| {
+                        for (index, name) in &lane_options {
+                            ui.selectable_value(&mut self.selected_lane, *index, name);
+                        }
+                    });
+                ui.label(RichText::new(scale_text).color(theme::MUTED));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui
+                        .button(if self.piano_roll_fullscreen {
+                            "◱ FENSTER"
+                        } else {
+                            "□ VOLLBILD"
+                        })
+                        .clicked()
+                    {
+                        toggle_fullscreen = true;
+                    }
+                });
+            });
+            ui.separator();
+            (
+                self.piano_roll_grid(ui, "piano_roll_workspace_rows"),
+                toggle_fullscreen,
+            )
+        });
+        let mut viewport_height = None;
+        let mut toggle_fullscreen = false;
+        let mut current_rect = None;
+        if let Some(response) = response {
+            current_rect = Some(response.response.rect);
+            if let Some((height, should_toggle_fullscreen)) = response.inner {
+                viewport_height = Some(height);
+                toggle_fullscreen = should_toggle_fullscreen;
+            }
+        }
+        if toggle_fullscreen {
+            if !self.piano_roll_fullscreen {
+                self.piano_roll_restore_rect = current_rect;
+            }
+            self.piano_roll_fullscreen = !self.piano_roll_fullscreen;
+        }
+        if !open {
+            self.piano_roll_fullscreen = false;
+            self.piano_roll_restore_rect = None;
+        }
+        self.piano_roll_window_open = open;
+        viewport_height
     }
 
     fn matrix(&mut self, ctx: &egui::Context) -> (f32, f32) {
@@ -3869,6 +3980,7 @@ impl eframe::App for KlausApp {
         self.piano_roll(ctx);
         self.inspector(ctx);
         self.matrix(ctx);
+        self.piano_roll_window(ctx);
         self.generator_window(ctx);
         self.performance_window(ctx);
         self.composer_window(ctx);
@@ -4343,6 +4455,57 @@ mod tests {
         assert!(
             resized_size.1 > default_size.1 + 100.0,
             "larger panel did not expose more row space: default={default_size:?}, resized={resized_size:?}"
+        );
+
+        drop(app);
+        let _ = std::fs::remove_file(autosave);
+    }
+
+    #[test]
+    fn piano_roll_workspace_opens_with_a_large_editing_area() {
+        let ctx = eframe::egui::Context::default();
+        let cc = eframe::CreationContext::_new_kittest(ctx.clone());
+        let mut app = super::KlausApp::new(&cc);
+        // Keep Drop's autosave away from the user's project.
+        let autosave = std::env::temp_dir().join(format!(
+            "klaus-piano-roll-workspace-test-{}.json",
+            std::process::id()
+        ));
+        app.autosave_path = autosave.clone();
+        app.project = crate::model::Project::demo();
+        app.piano_roll_window_open = true;
+
+        let input = eframe::egui::RawInput {
+            screen_rect: Some(eframe::egui::Rect::from_min_size(
+                eframe::egui::Pos2::ZERO,
+                eframe::egui::vec2(1440.0, 1000.0),
+            )),
+            system_theme: Some(eframe::egui::Theme::Dark),
+            ..Default::default()
+        };
+        let mut viewport_height = 0.0;
+        for _ in 0..3 {
+            let _ = ctx.run(input.clone(), |ctx| {
+                viewport_height = app.piano_roll_window(ctx).unwrap_or_default();
+            });
+        }
+        let windowed_viewport_height = viewport_height;
+
+        app.piano_roll_fullscreen = true;
+        for _ in 0..2 {
+            let _ = ctx.run(input.clone(), |ctx| {
+                viewport_height = app.piano_roll_window(ctx).unwrap_or_default();
+            });
+        }
+
+        assert!(app.piano_roll_window_open);
+        assert!(
+            windowed_viewport_height >= 500.0,
+            "piano-roll workspace is too small: {windowed_viewport_height}"
+        );
+        assert!(
+            viewport_height >= windowed_viewport_height + 200.0,
+            "fullscreen did not enlarge the editing area: windowed={windowed_viewport_height}, fullscreen={viewport_height}"
         );
 
         drop(app);
