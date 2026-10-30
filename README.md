@@ -331,6 +331,8 @@ Der Wechsel erfolgt wahlweise sofort oder quantisiert am nächsten Step, Beat od
 
 Performance Capture zeichnet ausgeführte Szenenwechsel, Live-Skips und Transportaktionen mit stabilen IDs auf, sodass Umbenennen und Sortieren die Aufnahme nicht beschädigen.
 
+**TIMELINE** in der Szenenleiste öffnet einen eigenständigen Szenenfahrplan. Die aktive Szene lässt sich als Abschnitt hinzufügen; jeder Abschnitt besitzt eine Dauer von 1 bis 256 Takten und kann verschoben, dupliziert oder gelöscht werden. **TIMELINE ABSPIELEN** wechselt die Szenen anschließend automatisch von links nach rechts. Der Fahrplan wird mit dem Projekt gespeichert und bleibt bewusst vom ausführlicheren Composer getrennt.
+
 ## Piano-Rolls
 
 ### Polyphones Melodie-Piano-Roll
@@ -406,7 +408,7 @@ Die verbindlichen visuellen Referenzen sind [`assets/klaussequencer58-character-
 | Live-Arpeggiator | ✅ | Presets | komplexere Arp-Transformationen |
 | Kreativer Generator | Reihe ✅ | ganze Szene | szenenübergreifende Dramaturgie |
 | Kettenpatterns | ✅ | Szenenverwaltung ausbauen | Song-/Kompositionsmodus |
-| Szenen | Duplizieren/sicheres Löschen ✅ | Szenen-Timeline | szenenübergreifende Dramaturgie |
+| Szenen | Duplizieren/Löschen/Timeline ✅ | komfortablere Abschnittsauswahl | szenenübergreifende Dramaturgie |
 | Live-Skips | ✅ | grafische Automation | Modulationsspuren |
 | Performance Capture | mehrere Takes/Loopblöcke ✅ | Kopieren/Einfügen, Zoom | erweiterte Automation |
 | Composer/Songmodus | Take- und Szenenclips ✅ | Abschnittsmarker/Zoom | parallele Automationsspuren |

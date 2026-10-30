@@ -104,6 +104,11 @@ fn project_round_trip_preserves_musical_state() {
     project.sync_active_performance_take();
     project.add_performance_take(true);
     project.performance_takes[1].name = "NACHTFAHRT VARIANTE".to_owned();
+    let scene_id = project.scenes[0].id;
+    let timeline_entry = project
+        .add_scene_timeline_entry(scene_id)
+        .expect("add scene timeline entry");
+    project.scene_timeline[timeline_entry].bars = 12;
     let json = project.to_json().expect("serialize project");
     let restored = Project::from_json(&json).expect("deserialize project");
     assert_eq!(restored, project);
@@ -287,4 +292,41 @@ fn referenced_scenes_cannot_be_deleted() {
             .expect_err("composer reference is protected"),
         "Szene wird im Composer verwendet"
     );
+
+    let timeline_scene = project.duplicate_scene(0).expect("timeline scene");
+    let timeline_scene_id = project.scenes[timeline_scene].id;
+    let entry = project
+        .add_scene_timeline_entry(timeline_scene_id)
+        .expect("add timeline entry");
+    project.scene_timeline[entry].bars = 8;
+    assert_eq!(project.scene_timeline_length_pulses(), 8 * 96);
+    assert_eq!(
+        project
+            .remove_scene(timeline_scene)
+            .expect_err("timeline reference is protected"),
+        "Szene wird in der Szenen-Timeline verwendet"
+    );
+}
+
+#[test]
+fn scene_timeline_entries_keep_order_duration_and_independent_identity() {
+    let mut project = Project::demo();
+    let scene_id = project.scenes[0].id;
+    let first = project
+        .add_scene_timeline_entry(scene_id)
+        .expect("add first timeline entry");
+    project.scene_timeline[first].bars = 6;
+
+    let duplicate = project
+        .duplicate_scene_timeline_entry(first)
+        .expect("duplicate timeline entry");
+
+    assert_eq!(duplicate, 1);
+    assert_ne!(
+        project.scene_timeline[first].id,
+        project.scene_timeline[duplicate].id
+    );
+    assert_eq!(project.scene_timeline[duplicate].scene_id, scene_id);
+    assert_eq!(project.scene_timeline[duplicate].bars, 6);
+    assert_eq!(project.scene_timeline_length_pulses(), 12 * 96);
 }
