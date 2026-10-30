@@ -222,3 +222,69 @@ fn scenes_capture_and_restore_all_chain_patterns() {
     assert_eq!(project.active_pattern_by_chain[0], alternate);
     assert_eq!(project.active_scene, Some(scene));
 }
+
+#[test]
+fn scenes_can_be_duplicated_without_sharing_identity() {
+    let mut project = Project::demo();
+    let source_patterns = project.scenes[0].pattern_by_chain.clone();
+
+    let duplicate = project.duplicate_scene(0).expect("duplicate scene");
+    let second_duplicate = project.duplicate_scene(0).expect("duplicate scene again");
+
+    assert_eq!(duplicate, 1);
+    assert_eq!(second_duplicate, 1);
+    assert_eq!(project.scenes[1].name, "SCENE 01 KOPIE 2");
+    assert_eq!(project.scenes[2].name, "SCENE 01 KOPIE");
+    assert_ne!(project.scenes[0].id, project.scenes[1].id);
+    assert_eq!(project.scenes[1].pattern_by_chain, source_patterns);
+    assert_eq!(project.active_scene, Some(second_duplicate));
+}
+
+#[test]
+fn scene_deletion_keeps_an_active_neighbor_and_protects_the_last_scene() {
+    let mut project = Project::demo();
+    let duplicate = project.duplicate_scene(0).expect("duplicate scene");
+
+    let active = project.remove_scene(duplicate).expect("remove duplicate");
+
+    assert_eq!(active, 0);
+    assert_eq!(project.active_scene, Some(0));
+    assert_eq!(project.scenes.len(), 1);
+    assert_eq!(
+        project
+            .remove_scene(0)
+            .expect_err("last scene is protected"),
+        "Die letzte Szene kann nicht gelöscht werden"
+    );
+}
+
+#[test]
+fn referenced_scenes_cannot_be_deleted() {
+    let mut project = Project::demo();
+    let performance_scene = project.duplicate_scene(0).expect("performance scene");
+    let performance_scene_id = project.scenes[performance_scene].id;
+    project.performance_timeline.push(PerformanceEvent {
+        pulse: 0,
+        action: PerformanceAction::SceneLaunch {
+            scene_id: performance_scene_id,
+        },
+    });
+    assert_eq!(
+        project
+            .remove_scene(performance_scene)
+            .expect_err("performance reference is protected"),
+        "Szene wird in einem Performance-Take verwendet"
+    );
+
+    let composer_scene = project.duplicate_scene(0).expect("composer scene");
+    let composer_scene_id = project.scenes[composer_scene].id;
+    project.add_song_clip(SongClipSource::Scene {
+        scene_id: composer_scene_id,
+    });
+    assert_eq!(
+        project
+            .remove_scene(composer_scene)
+            .expect_err("composer reference is protected"),
+        "Szene wird im Composer verwendet"
+    );
+}

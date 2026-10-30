@@ -84,7 +84,7 @@ Gleichzeitig gilt: Der Prototyp ist noch kein sicherheitskritisches Bühnenbetri
 - Live-Instrument, Akkord-Capture, Step-Record und quantisierte Aufnahme
 - Live-Arpeggiator inklusive Latch und Arp-Ratchets
 - mehrere Kettenpatterns mit sicherem Patternwechsel
-- Szenen für gemeinsame Patternwechsel über alle Ketten
+- Szenen für gemeinsame Patternwechsel über alle Ketten, inklusive Duplizieren und sicherem Löschen
 - quantisierte Szenenstarts: sofort, nächster Step, Beat oder Takt
 - MIDI-Clock als Internal, Master oder Follower
 - MIDI Start, Continue und Stop
@@ -325,11 +325,11 @@ Mehrere Ketten dürfen unterschiedliche effektive Längen besitzen und gleichzei
 
 ### Pattern und Szenen
 
-Mehrere Einzelpatterns gehören jeweils zu einer Kette. Eine Szene speichert die aktive Patternauswahl aller Ketten gemeinsam. Szenen lassen sich anlegen, umbenennen, aktualisieren und während der Wiedergabe vormerken.
+Mehrere Einzelpatterns gehören jeweils zu einer Kette. Eine Szene speichert die aktive Patternauswahl aller Ketten gemeinsam. Szenen lassen sich anlegen, umbenennen, aktualisieren, duplizieren, sicher löschen und während der Wiedergabe vormerken. Die letzte Szene sowie in Performance-Takes oder Composer-Clips verwendete Szenen sind vor dem Löschen geschützt.
 
 Der Wechsel erfolgt wahlweise sofort oder quantisiert am nächsten Step, Beat oder Takt. Grundlage ist eine gemeinsame 24-PPQN-Transportzeit, sodass auch unabhängig lange Ketten gemeinsam in eine neue Szene wechseln können, ohne ihre musikalische Eigenständigkeit aufzugeben.
 
-Die Performance-Timeline ist im Projektformat bereits vorbereitet. Die tatsächliche Aufnahme von Szenenwechseln, Live-Skips und Transportaktionen folgt in einer späteren Version.
+Performance Capture zeichnet ausgeführte Szenenwechsel, Live-Skips und Transportaktionen mit stabilen IDs auf, sodass Umbenennen und Sortieren die Aufnahme nicht beschädigen.
 
 ## Piano-Rolls
 
@@ -406,7 +406,7 @@ Die verbindlichen visuellen Referenzen sind [`assets/klaussequencer58-character-
 | Live-Arpeggiator | ✅ | Presets | komplexere Arp-Transformationen |
 | Kreativer Generator | Reihe ✅ | ganze Szene | szenenübergreifende Dramaturgie |
 | Kettenpatterns | ✅ | Szenenverwaltung ausbauen | Song-/Kompositionsmodus |
-| Szenen | ✅ | Duplizieren/Löschen | Szenen-Timeline |
+| Szenen | Duplizieren/sicheres Löschen ✅ | Szenen-Timeline | szenenübergreifende Dramaturgie |
 | Live-Skips | ✅ | grafische Automation | Modulationsspuren |
 | Performance Capture | mehrere Takes/Loopblöcke ✅ | Kopieren/Einfügen, Zoom | erweiterte Automation |
 | Composer/Songmodus | Take- und Szenenclips ✅ | Abschnittsmarker/Zoom | parallele Automationsspuren |

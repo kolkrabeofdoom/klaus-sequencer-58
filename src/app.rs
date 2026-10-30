@@ -1722,6 +1722,58 @@ impl KlausApp {
                             self.scene_status = "SZENE AKTUALISIERT ✓".to_owned();
                         }
                     }
+                    if ui
+                        .add_enabled(
+                            self.project.active_scene.is_some(),
+                            egui::Button::new("DUPLIZIEREN"),
+                        )
+                        .on_hover_text("Aktive Szene als unabhängige Kopie anlegen")
+                        .clicked()
+                        && let Some(index) = self.project.active_scene
+                    {
+                        match self.project.duplicate_scene(index) {
+                            Ok(duplicate) => {
+                                if let Some(queued) = self.queued_scene
+                                    && queued > index
+                                {
+                                    self.queued_scene = Some(queued + 1);
+                                }
+                                let name = &self.project.scenes[duplicate].name;
+                                self.scene_status = format!("{name} ANGELEGT");
+                            }
+                            Err(error) => {
+                                self.scene_status = format!("SZENENFEHLER · {error}");
+                            }
+                        }
+                    }
+                    if ui
+                        .add_enabled(
+                            self.project.active_scene.is_some() && self.project.scenes.len() > 1,
+                            egui::Button::new("LÖSCHEN"),
+                        )
+                        .on_hover_text(if self.project.scenes.len() > 1 {
+                            "Aktive Szene löschen; verwendete Szenen sind geschützt"
+                        } else {
+                            "Die letzte Szene kann nicht gelöscht werden"
+                        })
+                        .clicked()
+                        && let Some(index) = self.project.active_scene
+                    {
+                        match self.project.remove_scene(index) {
+                            Ok(active) => {
+                                self.queued_scene = match self.queued_scene {
+                                    Some(queued) if queued == index => None,
+                                    Some(queued) if queued > index => Some(queued - 1),
+                                    queued => queued,
+                                };
+                                let name = &self.project.scenes[active].name;
+                                self.scene_status = format!("SZENE GELÖSCHT · {name} AKTIV");
+                            }
+                            Err(error) => {
+                                self.scene_status = format!("NICHT GELÖSCHT · {error}");
+                            }
+                        }
+                    }
                     if let Some(index) = self.project.active_scene
                         && let Some(scene) = self.project.scenes.get_mut(index)
                     {

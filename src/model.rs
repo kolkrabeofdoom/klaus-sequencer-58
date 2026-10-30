@@ -1171,6 +1171,79 @@ impl Project {
         index
     }
 
+    pub fn duplicate_scene(&mut self, scene_index: usize) -> Result<usize, String> {
+        let source = self
+            .scenes
+            .get(scene_index)
+            .ok_or_else(|| "Unbekannte Szene".to_owned())?
+            .clone();
+        let id = self
+            .scenes
+            .iter()
+            .map(|scene| scene.id)
+            .max()
+            .map_or(0, |id| id + 1);
+        let base_name = format!("{} KOPIE", source.name);
+        let mut name = base_name.clone();
+        let mut suffix = 2;
+        while self.scenes.iter().any(|scene| scene.name == name) {
+            name = format!("{base_name} {suffix}");
+            suffix += 1;
+        }
+        let new_index = scene_index + 1;
+        self.scenes.insert(
+            new_index,
+            Scene {
+                id,
+                name,
+                pattern_by_chain: source.pattern_by_chain,
+            },
+        );
+        self.apply_scene(new_index)?;
+        Ok(new_index)
+    }
+
+    pub fn remove_scene(&mut self, scene_index: usize) -> Result<usize, String> {
+        let scene = self
+            .scenes
+            .get(scene_index)
+            .ok_or_else(|| "Unbekannte Szene".to_owned())?;
+        if self.scenes.len() <= 1 {
+            return Err("Die letzte Szene kann nicht gelöscht werden".to_owned());
+        }
+        let scene_id = scene.id;
+        let used_by_performance = self.performance_timeline.iter().any(|event| {
+            matches!(event.action, PerformanceAction::SceneLaunch { scene_id: id } if id == scene_id)
+        }) || self.performance_takes.iter().any(|take| {
+            take.events.iter().any(|event| {
+                matches!(event.action, PerformanceAction::SceneLaunch { scene_id: id } if id == scene_id)
+            })
+        });
+        if used_by_performance {
+            return Err("Szene wird in einem Performance-Take verwendet".to_owned());
+        }
+        if self.song_clips.iter().any(
+            |clip| matches!(clip.source, SongClipSource::Scene { scene_id: id } if id == scene_id),
+        ) {
+            return Err("Szene wird im Composer verwendet".to_owned());
+        }
+
+        let previous_active = self.active_scene;
+        self.scenes.remove(scene_index);
+        let active = match previous_active {
+            Some(index) if index == scene_index => scene_index.min(self.scenes.len() - 1),
+            Some(index) if index > scene_index => index - 1,
+            Some(index) => index,
+            None => scene_index.min(self.scenes.len() - 1),
+        };
+        if previous_active == Some(scene_index) || previous_active.is_none() {
+            self.apply_scene(active)?;
+        } else {
+            self.active_scene = Some(active);
+        }
+        Ok(active)
+    }
+
     pub fn capture_scene(&mut self, scene_index: usize) -> Result<(), String> {
         self.sync_all_active_patterns();
         let scene = self
