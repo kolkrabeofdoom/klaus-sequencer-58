@@ -377,7 +377,7 @@ impl KlausApp {
 
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                         ui.add_space(18.0);
-                        let play_label = if self.engine.playing { "II" } else { "▶" };
+                        let play_label = if self.engine.playing { "II" } else { "PLAY" };
                         if ui
                             .add_sized(
                                 [48.0, 48.0],
@@ -397,7 +397,7 @@ impl KlausApp {
                         if ui
                             .add_sized(
                                 [44.0, 44.0],
-                                egui::Button::new("■")
+                                egui::Button::new("STOP")
                                     .fill(theme::PANEL_RAISED)
                                     .stroke(Stroke::new(1.0_f32, Color32::from_rgb(63, 76, 82))),
                             )
@@ -420,14 +420,14 @@ impl KlausApp {
                         );
                         if self.performance_capture_active {
                             ui.label(
-                                RichText::new("● REC")
+                                RichText::new("REC")
                                     .color(theme::DANGER)
                                     .strong()
                                     .size(11.0),
                             );
                         } else if self.performance_playback_active {
                             ui.label(
-                                RichText::new("▶ TAKE")
+                                RichText::new("TAKE PLAY")
                                     .color(theme::ACID)
                                     .strong()
                                     .size(11.0),
@@ -451,7 +451,7 @@ impl KlausApp {
                         if ui
                             .add_sized(
                                 [44.0, 42.0],
-                                egui::Button::new("ⓘ")
+                                egui::Button::new("INFO")
                                     .fill(theme::PANEL_RAISED)
                                     .stroke(Stroke::new(1.0_f32, Color32::from_rgb(63, 76, 82))),
                             )
@@ -502,24 +502,22 @@ impl KlausApp {
                     }
                     ui.separator();
                     if ui
-                        .add_enabled(!self.undo_stack.is_empty(), egui::Button::new("↶ UNDO"))
+                        .add_enabled(!self.undo_stack.is_empty(), egui::Button::new("UNDO"))
                         .clicked()
                     {
                         self.undo();
                     }
                     if ui
-                        .add_enabled(!self.redo_stack.is_empty(), egui::Button::new("↷ REDO"))
+                        .add_enabled(!self.redo_stack.is_empty(), egui::Button::new("REDO"))
                         .clicked()
                     {
                         self.redo();
                     }
                     if ui
                         .add(
-                            egui::Button::new(
-                                RichText::new("✦ KOSMISCHER GENERATOR").color(theme::ACID),
-                            )
-                            .fill(theme::PANEL_RAISED)
-                            .stroke(Stroke::new(1.0_f32, theme::ACID.gamma_multiply(0.7))),
+                            egui::Button::new(RichText::new("GENERATOR").color(theme::ACID))
+                                .fill(theme::PANEL_RAISED)
+                                .stroke(Stroke::new(1.0_f32, theme::ACID.gamma_multiply(0.7))),
                         )
                         .on_hover_text(
                             "Berlin-School-inspirierte Motive für die gewählte Reihe erzeugen",
@@ -530,7 +528,7 @@ impl KlausApp {
                     }
                     if ui
                         .add(
-                            egui::Button::new(RichText::new("● PERFORMANCE CAPTURE").color(
+                            egui::Button::new(RichText::new("CAPTURE").color(
                                 if self.performance_capture_active {
                                     theme::DANGER
                                 } else {
@@ -546,7 +544,8 @@ impl KlausApp {
                     }
                     if ui
                         .add(
-                            egui::Button::new(RichText::new("▤ COMPOSER").color(theme::ORANGE))
+                            egui::Button::new(RichText::new("COMPOSER").color(theme::ORANGE))
+                                .min_size(egui::vec2(112.0, 44.0))
                                 .fill(theme::PANEL_RAISED)
                                 .stroke(Stroke::new(1.0_f32, theme::ORANGE.gamma_multiply(0.7))),
                         )
@@ -657,7 +656,7 @@ impl KlausApp {
         if let Some(chain_index) = self.selected_chain_index() {
             let _ = self.project.sync_active_pattern_from_lanes(chain_index);
         }
-        self.generator_status = format!("REIHE {} ÜBERNOMMEN ✓", preview.lane + 1);
+        self.generator_status = format!("REIHE {} ÜBERNOMMEN", preview.lane + 1);
     }
 
     fn generator_window(&mut self, ctx: &egui::Context) {
@@ -677,7 +676,7 @@ impl KlausApp {
         let status = self.generator_status.clone();
         let mut action = None;
 
-        egui::Window::new("✦ KOSMISCHER GENERATOR")
+        egui::Window::new("KOSMISCHER GENERATOR")
             .open(&mut open)
             .default_width(650.0)
             .resizable(true)
@@ -825,7 +824,7 @@ impl KlausApp {
                             .map(|value| &value.steps[step_index]);
                         let (label, fill) = match step {
                             Some(step) if step.state == StepState::Skip => {
-                                ("×".to_owned(), Color32::from_rgb(45, 27, 31))
+                                ("X".to_owned(), Color32::from_rgb(45, 27, 31))
                             }
                             Some(step) if step.state == StepState::Active => (
                                 if step.ratchets > 1 {
@@ -833,7 +832,7 @@ impl KlausApp {
                                 } else if step.notes.len() > 1 {
                                     format!("{}n", step.notes.len())
                                 } else {
-                                    "•".to_owned()
+                                    "ON".to_owned()
                                 },
                                 theme::lane_color(lane_index).gamma_multiply(0.72),
                             ),
@@ -863,13 +862,13 @@ impl KlausApp {
                 }
 
                 ui.horizontal_wrapped(|ui| {
-                    if ui.button("✦ ERZEUGEN").clicked() {
+                    if ui.button("ERZEUGEN").clicked() {
                         action = Some(GeneratorAction::Generate);
                     }
-                    if ui.button("↻ VARIANTE").clicked() {
+                    if ui.button("VARIANTE").clicked() {
                         action = Some(GeneratorAction::Variant);
                     }
-                    if ui.button("≈ MUTIEREN").clicked() {
+                    if ui.button("MUTIEREN").clicked() {
                         action = Some(GeneratorAction::Mutate);
                     }
                     if ui
@@ -945,7 +944,7 @@ impl KlausApp {
         let mut remove = false;
         let mut timeline_changed = false;
 
-        egui::Window::new("▤ SZENEN-TIMELINE")
+        egui::Window::new("SZENEN-TIMELINE")
             .open(&mut open)
             .default_width(900.0)
             .default_height(360.0)
@@ -969,7 +968,7 @@ impl KlausApp {
                         add_scene = true;
                     }
                     if ui
-                        .add_enabled(!entries.is_empty(), egui::Button::new("▶ TIMELINE"))
+                        .add_enabled(!entries.is_empty(), egui::Button::new("TIMELINE PLAY"))
                         .clicked()
                     {
                         play = true;
@@ -977,7 +976,7 @@ impl KlausApp {
                     if ui
                         .add_enabled(
                             self.scene_timeline_playback_active,
-                            egui::Button::new("■ STOPP"),
+                            egui::Button::new("STOPP"),
                         )
                         .clicked()
                     {
@@ -1045,16 +1044,16 @@ impl KlausApp {
                         timeline_changed = ui
                             .add(egui::DragValue::new(&mut entry.bars).range(1..=256))
                             .changed();
-                        if ui.button("←").clicked() {
+                        if ui.button("NACH LINKS").clicked() {
                             move_left = true;
                         }
-                        if ui.button("→").clicked() {
+                        if ui.button("NACH RECHTS").clicked() {
                             move_right = true;
                         }
-                        if ui.button("⧉ DUPLIZIEREN").clicked() {
+                        if ui.button("DUPLIZIEREN").clicked() {
                             duplicate = true;
                         }
-                        if ui.button("× LÖSCHEN").clicked() {
+                        if ui.button("LÖSCHEN").clicked() {
                             remove = true;
                         }
                     });
@@ -1148,7 +1147,7 @@ impl KlausApp {
         let mut stop_song = false;
         let mut export_midi = false;
 
-        egui::Window::new("▤ K.L.A.U.S. COMPOSER")
+        egui::Window::new("K.L.A.U.S. COMPOSER")
             .open(&mut open)
             .default_width(1120.0)
             .default_height(650.0)
@@ -1166,19 +1165,19 @@ impl KlausApp {
                         .color(theme::MUTED),
                     );
                     if ui
-                        .add_enabled(!clips.is_empty(), egui::Button::new("▶ SONG"))
+                        .add_enabled(!clips.is_empty(), egui::Button::new("SONG PLAY"))
                         .clicked()
                     {
                         play_song = true;
                     }
                     if ui
-                        .add_enabled(self.song_playback_active, egui::Button::new("■ STOPP"))
+                        .add_enabled(self.song_playback_active, egui::Button::new("STOPP"))
                         .clicked()
                     {
                         stop_song = true;
                     }
                     if ui
-                        .add_enabled(!clips.is_empty(), egui::Button::new("⇩ MIDI EXPORT"))
+                        .add_enabled(!clips.is_empty(), egui::Button::new("MIDI EXPORT"))
                         .clicked()
                     {
                         export_midi = true;
@@ -1186,9 +1185,9 @@ impl KlausApp {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui
                             .button(if self.composer_fullscreen {
-                                "◱ FENSTER"
+                                "FENSTER"
                             } else {
-                                "□ VOLLBILD"
+                                "VOLLBILD"
                             })
                             .clicked()
                         {
@@ -1260,7 +1259,7 @@ impl KlausApp {
                                         [width, 88.0],
                                         egui::Button::new(
                                             RichText::new(format!(
-                                                "{source}\n{}\n{} TAKTE × {}",
+                                                "{source}\n{}\n{} TAKTE x {}",
                                                 clip.name, clip.bars, clip.repeats
                                             ))
                                             .color(Color32::WHITE),
@@ -1318,16 +1317,16 @@ impl KlausApp {
                                 ClipTransition::Restart,
                                 "NEUSTART",
                             );
-                            if ui.button("←").clicked() {
+                            if ui.button("NACH LINKS").clicked() {
                                 move_left = true;
                             }
-                            if ui.button("→").clicked() {
+                            if ui.button("NACH RECHTS").clicked() {
                                 move_right = true;
                             }
-                            if ui.button("⧉ DUPLIZIEREN").clicked() {
+                            if ui.button("DUPLIZIEREN").clicked() {
                                 duplicate = true;
                             }
-                            if ui.button("× LÖSCHEN").clicked() {
+                            if ui.button("LÖSCHEN").clicked() {
                                 remove = true;
                             }
                         });
@@ -1436,7 +1435,7 @@ impl KlausApp {
         let mut move_event = None;
         let mut selected_event = self.selected_performance_event;
 
-        egui::Window::new("● PERFORMANCE CAPTURE")
+        egui::Window::new("PERFORMANCE CAPTURE")
             .open(&mut open)
             .default_width(760.0)
             .default_height(560.0)
@@ -1479,7 +1478,7 @@ impl KlausApp {
                     }
                     if ui
                         .add(
-                            egui::Button::new("⧉ DUPLIZIEREN")
+                            egui::Button::new("DUPLIZIEREN")
                                 .min_size(egui::vec2(112.0, 30.0)),
                         )
                         .clicked()
@@ -1489,7 +1488,7 @@ impl KlausApp {
                     if ui
                         .add_enabled(
                             takes.len() > 1,
-                            egui::Button::new("− LÖSCHEN").min_size(egui::vec2(88.0, 30.0)),
+                            egui::Button::new("LÖSCHEN").min_size(egui::vec2(88.0, 30.0)),
                         )
                         .clicked()
                     {
@@ -1506,9 +1505,9 @@ impl KlausApp {
                         .add(
                             egui::Button::new(
                                 RichText::new(if capture_active {
-                                    "■ AUFNAHME BEENDEN"
+                                    "AUFNAHME BEENDEN"
                                 } else {
-                                    "● AUFNAHME BEREIT"
+                                    "AUFNAHME BEREIT"
                                 })
                                 .color(Color32::WHITE),
                             )
@@ -1527,7 +1526,7 @@ impl KlausApp {
                         .add_enabled(
                             !events.is_empty() && !capture_active,
                             egui::Button::new(
-                                RichText::new("▶ TAKE ABSPIELEN").color(Color32::WHITE),
+                                RichText::new("TAKE ABSPIELEN").color(Color32::WHITE),
                             )
                                 .fill(Color32::from_rgb(30, 61, 52))
                                 .min_size(egui::vec2(142.0, 38.0)),
@@ -1540,7 +1539,7 @@ impl KlausApp {
                         .add_enabled(
                             playback_active,
                             egui::Button::new(
-                                RichText::new("■ TAKE STOPP").color(Color32::WHITE),
+                                RichText::new("TAKE STOPP").color(Color32::WHITE),
                             )
                                 .min_size(egui::vec2(112.0, 38.0)),
                         )
@@ -1751,7 +1750,7 @@ impl KlausApp {
                                         if ui
                                             .add_enabled(
                                                 !capture_active && !playback_active,
-                                                egui::Button::new("×")
+                                                egui::Button::new("X")
                                                     .min_size(egui::vec2(32.0, 30.0)),
                                             )
                                             .on_hover_text("Ereignis entfernen")
@@ -1912,7 +1911,7 @@ impl KlausApp {
                         self.scene_status = format!("{name} ANGELEGT");
                         self.project.active_scene = Some(index);
                     }
-                    if ui.button("▤ TIMELINE").clicked() {
+                    if ui.button("TIMELINE").clicked() {
                         self.scene_timeline_open = true;
                     }
                     if ui
@@ -1927,7 +1926,7 @@ impl KlausApp {
                         if let Err(error) = self.project.capture_scene(index) {
                             self.scene_status = format!("SZENENFEHLER · {error}");
                         } else {
-                            self.scene_status = "SZENE AKTUALISIERT ✓".to_owned();
+                            self.scene_status = "SZENE AKTUALISIERT".to_owned();
                         }
                     }
                     if ui
@@ -2094,7 +2093,7 @@ impl KlausApp {
                         }
                     }
                     if ui
-                        .button("↻")
+                        .button("NEU")
                         .on_hover_text("MIDI-Geräte neu einlesen")
                         .clicked()
                     {
@@ -2103,14 +2102,10 @@ impl KlausApp {
 
                     ui.separator();
                     let (status_text, status_color) = match &self.midi_status {
-                        MidiStatus::Disconnected => ("● GETRENNT".to_owned(), theme::MUTED),
-                        MidiStatus::Connecting(name) => {
-                            (format!("● VERBINDE {name}"), theme::ORANGE)
-                        }
-                        MidiStatus::Connected(name) => {
-                            (format!("● VERBUNDEN · {name}"), theme::ACID)
-                        }
-                        MidiStatus::Error(error) => (format!("● {error}"), theme::DANGER),
+                        MidiStatus::Disconnected => ("GETRENNT".to_owned(), theme::MUTED),
+                        MidiStatus::Connecting(name) => (format!("VERBINDE {name}"), theme::ORANGE),
+                        MidiStatus::Connected(name) => (format!("VERBUNDEN · {name}"), theme::ACID),
+                        MidiStatus::Error(error) => (error.clone(), theme::DANGER),
                     };
                     ui.label(RichText::new(status_text).color(status_color).size(9.0));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -2162,7 +2157,7 @@ impl KlausApp {
                         }
                     }
                     if ui
-                        .button("↻")
+                        .button("NEU")
                         .on_hover_text("MIDI-Eingänge neu einlesen")
                         .clicked()
                     {
@@ -2211,7 +2206,7 @@ impl KlausApp {
         match save_project_atomic(&self.project, &self.autosave_path) {
             Ok(()) => {
                 self.last_saved_json = json;
-                self.save_status = "AUTOSAVE ✓".to_owned();
+                self.save_status = "AUTOSAVE OK".to_owned();
             }
             Err(error) => self.save_status = format!("AUTOSAVE-FEHLER · {error}"),
         }
@@ -2244,7 +2239,7 @@ impl KlausApp {
         self.project = previous;
         self.history_project = self.project.clone();
         self.queued_scene = None;
-        self.save_status = "RÜCKGÄNGIG ✓".to_owned();
+        self.save_status = "RÜCKGÄNGIG".to_owned();
     }
 
     fn redo(&mut self) {
@@ -2256,7 +2251,7 @@ impl KlausApp {
         self.project = next;
         self.history_project = self.project.clone();
         self.queued_scene = None;
-        self.save_status = "WIEDERHOLEN ✓".to_owned();
+        self.save_status = "WIEDERHOLEN".to_owned();
     }
 
     fn save_project_to(&mut self, path: PathBuf) {
@@ -2266,7 +2261,7 @@ impl KlausApp {
             Ok(()) => {
                 self.project_path = Some(path);
                 self.last_saved_json = self.project.to_json().unwrap_or_default();
-                self.save_status = "PROJEKT GESPEICHERT ✓".to_owned();
+                self.save_status = "PROJEKT GESPEICHERT".to_owned();
             }
             Err(error) => self.save_status = format!("SPEICHERFEHLER · {error}"),
         }
@@ -2319,7 +2314,7 @@ impl KlausApp {
                 self.redo_stack.clear();
                 self.history_project = self.project.clone();
                 self.last_saved_json = self.project.to_json().unwrap_or_default();
-                self.save_status = "PROJEKT GEÖFFNET ✓".to_owned();
+                self.save_status = "PROJEKT GEÖFFNET".to_owned();
             }
             Err(error) => self.save_status = format!("ÖFFNUNGSFEHLER · {error}"),
         }
@@ -3209,7 +3204,7 @@ impl KlausApp {
             self.midi.schedule_short(now, message, len);
         }
         self.sound_status = format!(
-            "{} · BANK {}:{} · PROGRAMM {} GESENDET ✓",
+            "{} · BANK {}:{} · PROGRAMM {} GESENDET",
             chain.name,
             sound
                 .bank_msb
@@ -3334,7 +3329,7 @@ impl KlausApp {
                         let mut gate = step.notes.first().map_or(0.72, |note| note.gate);
                         ui.label(RichText::new("GATE").color(theme::MUTED).size(9.0));
                         if ui
-                            .add(egui::Slider::new(&mut gate, 0.05..=1.0).suffix(" ×"))
+                            .add(egui::Slider::new(&mut gate, 0.05..=1.0).suffix(" x"))
                             .changed()
                         {
                             for note in &mut step.notes {
@@ -3666,12 +3661,12 @@ impl KlausApp {
                                 ui.label(RichText::new("ARP-GATE").color(theme::MUTED).size(9.0));
                                 ui.add(
                                     egui::Slider::new(&mut chain.arpeggiator.gate, 0.05..=1.0)
-                                        .suffix(" ×"),
+                                        .suffix(" x"),
                                 );
                                 if ui
                                     .add_sized(
                                         [ui.available_width(), 36.0],
-                                        egui::Button::new("ARP → NEUES PATTERN")
+                                        egui::Button::new("ARP ALS NEUES PATTERN")
                                             .fill(Color32::from_rgb(54, 33, 70)),
                                     )
                                     .clicked()
@@ -3696,7 +3691,7 @@ impl KlausApp {
                             match self.project.link_lane_with_next(self.selected_lane) {
                                 Ok(()) => {
                                     self.project.active_scene = None;
-                                    self.save_status = "REIHEN VERKETTET ✓".to_owned();
+                                    self.save_status = "REIHEN VERKETTET".to_owned();
                                 }
                                 Err(error) => self.save_status = format!("KETTENFEHLER · {error}"),
                             }
@@ -3708,7 +3703,7 @@ impl KlausApp {
                             match self.project.split_chain_for_lane(self.selected_lane) {
                                 Ok(()) => {
                                     self.project.active_scene = None;
-                                    self.save_status = "KETTE GETRENNT ✓".to_owned();
+                                    self.save_status = "KETTE GETRENNT".to_owned();
                                 }
                                 Err(error) => self.save_status = format!("KETTENFEHLER · {error}"),
                             }
@@ -3791,7 +3786,7 @@ impl KlausApp {
                     );
                     ui.label(RichText::new(scale_text).color(theme::MUTED));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.button("□ GROSS ÖFFNEN").clicked() {
+                        if ui.button("GROSS ÖFFNEN").clicked() {
                             self.piano_roll_window_open = true;
                         }
                     });
@@ -3905,7 +3900,7 @@ impl KlausApp {
         } else {
             self.piano_roll_restore_rect.take()
         };
-        let mut window = egui::Window::new("▦ PIANO-ROLL-ARBEITSBEREICH")
+        let mut window = egui::Window::new("PIANO-ROLL-ARBEITSBEREICH")
             .open(&mut open)
             .default_width(1180.0)
             .default_height(720.0)
@@ -3944,9 +3939,9 @@ impl KlausApp {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui
                         .button(if self.piano_roll_fullscreen {
-                            "◱ FENSTER"
+                            "FENSTER"
                         } else {
-                            "□ VOLLBILD"
+                            "VOLLBILD"
                         })
                         .clicked()
                     {
@@ -4051,7 +4046,7 @@ impl KlausApp {
                                     let label = if live_skipped {
                                         "L".to_owned()
                                     } else if step.state == StepState::Skip {
-                                        "×".to_owned()
+                                        "X".to_owned()
                                     } else if step.ratchets > 1 {
                                         format!("{}", step.ratchets)
                                     } else if step.notes.len() > 1 {
@@ -4323,7 +4318,7 @@ impl Drop for KlausApp {
 
 fn root_name(root: u8) -> &'static str {
     [
-        "C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B",
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
     ][usize::from(root % 12)]
 }
 
@@ -4459,7 +4454,7 @@ fn note_name(pitch: u8, kind: LaneKind) -> String {
         };
     }
     const NAMES: [&str; 12] = [
-        "C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B",
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
     ];
     let octave = i16::from(pitch) / 12 - 1;
     format!("{}{}", NAMES[pitch as usize % 12], octave)
@@ -4578,10 +4573,10 @@ fn build_arp_sequence(
 
 fn midi_status_label(status: &MidiStatus) -> (String, Color32) {
     match status {
-        MidiStatus::Disconnected => ("● GETRENNT".to_owned(), theme::MUTED),
-        MidiStatus::Connecting(name) => (format!("● VERBINDE {name}"), theme::ORANGE),
-        MidiStatus::Connected(name) => (format!("● VERBUNDEN · {name}"), theme::ACID),
-        MidiStatus::Error(error) => (format!("● {error}"), theme::DANGER),
+        MidiStatus::Disconnected => ("GETRENNT".to_owned(), theme::MUTED),
+        MidiStatus::Connecting(name) => (format!("VERBINDE {name}"), theme::ORANGE),
+        MidiStatus::Connected(name) => (format!("VERBUNDEN · {name}"), theme::ACID),
+        MidiStatus::Error(error) => (error.clone(), theme::DANGER),
     }
 }
 
@@ -4607,6 +4602,12 @@ mod tests {
 
     use super::{build_arp_sequence, performance_position_label, quantization_boundary_crossed};
     use crate::model::ArpMode;
+
+    #[test]
+    fn note_labels_use_ascii_sharps() {
+        assert_eq!(super::root_name(8), "G#");
+        assert_eq!(super::note_name(56, crate::model::LaneKind::Melody), "G#3");
+    }
 
     #[test]
     fn toolbar_panels_reserve_their_touch_control_height() {
