@@ -22,6 +22,10 @@ use crate::model::{
 use crate::persistence::{default_autosave_path, load_project, save_project_atomic};
 use crate::theme;
 
+const PIANO_ROLL_MIN_HEIGHT: f32 = 150.0;
+const PIANO_ROLL_DEFAULT_HEIGHT: f32 = 320.0;
+const MATRIX_MIN_HEIGHT: f32 = 160.0;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WorkMode {
     Edit,
@@ -3425,9 +3429,14 @@ impl KlausApp {
             });
     }
 
-    fn piano_roll(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::bottom("piano_roll")
-            .exact_height(220.0)
+    fn piano_roll(&mut self, ctx: &egui::Context) -> (f32, f32) {
+        let max_height =
+            (ctx.available_rect().height() - MATRIX_MIN_HEIGHT).max(PIANO_ROLL_MIN_HEIGHT);
+        let default_height = PIANO_ROLL_DEFAULT_HEIGHT.min(max_height);
+        let panel = egui::TopBottomPanel::bottom("piano_roll")
+            .default_height(default_height)
+            .min_height(PIANO_ROLL_MIN_HEIGHT)
+            .max_height(max_height)
             .resizable(true)
             .frame(
                 egui::Frame::new()
@@ -3494,7 +3503,7 @@ impl KlausApp {
                 };
                 let cell_width =
                     ((ui.available_width() - 72.0) / STEPS_PER_LANE as f32 - 3.0).clamp(22.0, 44.0);
-                egui::ScrollArea::vertical().show(ui, |ui| {
+                let rows = egui::ScrollArea::vertical().show(ui, |ui| {
                     for row in (0..row_count).rev() {
                         let pitch = base_pitch + row as u8;
                         ui.horizontal(|ui| {
@@ -3535,7 +3544,9 @@ impl KlausApp {
                         });
                     }
                 });
+                rows.inner_rect.height()
             });
+        (panel.response.rect.height(), panel.inner)
     }
 
     fn matrix(&mut self, ctx: &egui::Context) -> (f32, f32) {
@@ -4264,6 +4275,74 @@ mod tests {
         assert!(
             content_height > viewport_height,
             "matrix rows must overflow at 720 px: content={content_height}, viewport={viewport_height}"
+        );
+
+        drop(app);
+        let _ = std::fs::remove_file(autosave);
+    }
+
+    #[test]
+    fn piano_roll_honors_a_resized_height_and_exposes_more_rows() {
+        let ctx = eframe::egui::Context::default();
+        let cc = eframe::CreationContext::_new_kittest(ctx.clone());
+        let mut app = super::KlausApp::new(&cc);
+        // Keep Drop's autosave away from the user's project.
+        let autosave = std::env::temp_dir().join(format!(
+            "klaus-piano-roll-layout-test-{}.json",
+            std::process::id()
+        ));
+        app.autosave_path = autosave.clone();
+        app.project = crate::model::Project::demo();
+
+        let input = eframe::egui::RawInput {
+            screen_rect: Some(eframe::egui::Rect::from_min_size(
+                eframe::egui::Pos2::ZERO,
+                eframe::egui::vec2(1440.0, 1120.0),
+            )),
+            system_theme: Some(eframe::egui::Theme::Dark),
+            ..Default::default()
+        };
+        let mut default_size = (0.0, 0.0);
+        let _ = ctx.run(input.clone(), |ctx| {
+            app.top_bar(ctx);
+            app.project_bar(ctx);
+            app.midi_bar(ctx);
+            app.scenes_bar(ctx);
+            default_size = app.piano_roll(ctx);
+        });
+
+        let requested_height = 480.0;
+        let mut resized_size = (0.0, 0.0);
+        let _ = ctx.run(input, |ctx| {
+            app.top_bar(ctx);
+            app.project_bar(ctx);
+            app.midi_bar(ctx);
+            app.scenes_bar(ctx);
+            ctx.data_mut(|data| {
+                data.insert_persisted(
+                    eframe::egui::Id::new("piano_roll"),
+                    eframe::egui::containers::panel::PanelState {
+                        rect: eframe::egui::Rect::from_min_size(
+                            eframe::egui::Pos2::ZERO,
+                            eframe::egui::vec2(1440.0, requested_height),
+                        ),
+                    },
+                );
+            });
+            resized_size = app.piano_roll(ctx);
+        });
+
+        assert!(
+            default_size.1 >= 4.0 * 44.0,
+            "default piano roll must expose at least four touch rows: {default_size:?}"
+        );
+        assert!(
+            (resized_size.0 - requested_height).abs() <= 1.0,
+            "piano roll ignored stored resize: {resized_size:?}"
+        );
+        assert!(
+            resized_size.1 > default_size.1 + 100.0,
+            "larger panel did not expose more row space: default={default_size:?}, resized={resized_size:?}"
         );
 
         drop(app);
